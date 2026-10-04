@@ -251,3 +251,8 @@ _This section supersedes the earlier "IVR order confirmation" notes._
   - Demo accounts are ranked first among nearby shoppers, so the main customer (Rekha) refusing a parcel pings the **New User (Kavita)**. Rekha herself is skipped as the refuser, or for "recent refusal".
   - A New User with no saved address still counts as nearby. Tapping **Buy now** asks for an address, then completes the purchase.
   - The hub's "Simulate … pays first" button is shown only for the background shoppers; demo accounts buy on their own phone.
+
+## Child lock: lockout per order (team request)
+- **Lockout is per order:** 3 wrong PINs lock **that order only** (same items and sizes) for 5 minutes. A different order can still be placed with the correct PIN, and the lock sheet says so.
+- **Separate attempt counts:** wrong-PIN counts are kept per order. Turning the lock off or changing the PIN has its own count.
+- **Unchanged:** the owner's WhatsApp alert on the 3rd wrong PIN. **Forgot PIN → OTP** sets a new PIN and clears every lockout.

@@ -44,8 +44,8 @@ export interface Customer {
 /** Child lock (Account → Settings). The PIN is only stored hashed. */
 export interface ChildLock {
   pinHash: string;
-  failed: number; // wrong PINs since the last success / lockout
-  lockedUntil?: number; // epoch ms; ordering blocked until then
+  /** Wrong PINs and lockouts per order attempt (key = the items being ordered, or 'settings'). Other orders stay open. */
+  attempts?: Record<string, { failed: number; lockedUntil?: number }>;
   otp?: { code: string; expiresAt: number }; // forgot-PIN reset code sent to the registered phone
 }
 

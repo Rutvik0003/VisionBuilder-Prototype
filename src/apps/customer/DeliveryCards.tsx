@@ -3,6 +3,7 @@ import dayjs from 'dayjs';
 import { Bike, Check, Crosshair, MessageSquare, PackageOpen, Phone, PhoneOff, RefreshCw, TriangleAlert, UserX } from 'lucide-react';
 import { pinFromGps } from '../../services/addresses';
 import { useChildLockGate } from './ChildLock';
+import { orderLockKey } from '../../services/childLock';
 import { useNavigate } from 'react-router-dom';
 import { rupees } from '../../lib/format';
 import { closeRefusedOrder, orderReplacement } from '../../services/openbox';
@@ -271,7 +272,7 @@ export function ReplacementSheet({ order, open, onClose }: { order: Order; open:
           setBusy(false);
           onClose();
           if (fresh) nav(`/customer/orders/${fresh.id}`);
-        })}>
+        }, orderLockKey([{ productId: order.items[0].productId, size }]))}>
           {busy ? 'Placing…' : t('replaceBtn')}
         </button>
         {gate}

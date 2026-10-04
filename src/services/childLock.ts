@@ -1,5 +1,5 @@
 // Child lock: a 4-digit PIN before any order is placed (team request).
-//  • 3 wrong PINs → ordering locked for 5 minutes.
+//  • 3 wrong PINs → THAT order is locked for 5 minutes (keyed by its items). Other orders can still be placed with the PIN.
 //  • Forgot PIN → a one-time code to the registered phone (shown in Messages here) → set a new PIN; clears the lock.
 //  • Turning it off needs the PIN (or the OTP reset).
 import { useStore } from '../store';
@@ -25,48 +25,59 @@ function setLock(customerId: string, lock: ChildLock | undefined) {
 
 export const isValidPin = (pin: string) => /^\d{4}$/.test(pin);
 export const childLockOn = (c: Customer) => !!c.childLock;
-export const lockedFor = (c: Customer) => Math.max(0, (c.childLock?.lockedUntil ?? 0) - Date.now());
+/** Same items (and sizes) = same order attempt. */
+export const orderLockKey = (items: { productId: string; size?: string }[]) =>
+  'order:' + items.map((i) => i.productId + (i.size ? '/' + i.size : '')).sort().join('+');
+export const SETTINGS_KEY = 'settings';
+
+export const lockedFor = (c: Customer, key: string = SETTINGS_KEY) => Math.max(0, (c.childLock?.attempts?.[key]?.lockedUntil ?? 0) - Date.now());
 
 export function enableChildLock(customerId: string, pin: string) {
   if (!isValidPin(pin)) return;
-  setLock(customerId, { pinHash: hashPin(customerId, pin), failed: 0 });
+  setLock(customerId, { pinHash: hashPin(customerId, pin) });
   get().log('CORE', 'child_lock_enabled', 'customer', {});
 }
 
 export type VerifyResult = { ok: true } | { ok: false; attemptsLeft: number; lockedMs: number };
 
-/** Check the PIN. The third wrong attempt locks ordering for 5 minutes. */
-export function verifyPin(customerId: string, pin: string): VerifyResult {
+/** Check the PIN for one order attempt. The third wrong PIN locks just that order for 5 minutes. */
+export function verifyPin(customerId: string, pin: string, key: string = SETTINGS_KEY): VerifyResult {
   const lock = lockOf(customerId);
   if (!lock) return { ok: true };
   const now = Date.now();
-  if (lock.lockedUntil && lock.lockedUntil > now) return { ok: false, attemptsLeft: 0, lockedMs: lock.lockedUntil - now };
+  const cur = lock.attempts?.[key] ?? { failed: 0 };
+  const put = (v: { failed: number; lockedUntil?: number } | undefined) => {
+    const attempts = { ...lock.attempts };
+    if (v) attempts[key] = v; else delete attempts[key];
+    setLock(customerId, { ...lock, attempts });
+  };
+  if (cur.lockedUntil && cur.lockedUntil > now) return { ok: false, attemptsLeft: 0, lockedMs: cur.lockedUntil - now };
   if (hashPin(customerId, pin) === lock.pinHash) {
-    setLock(customerId, { ...lock, failed: 0, lockedUntil: undefined });
-    get().log('CORE', 'child_lock_pin_ok', 'customer', {});
+    put(undefined);
+    get().log('CORE', 'child_lock_pin_ok', 'customer', { key });
     return { ok: true };
   }
-  const failed = lock.failed + 1;
+  const failed = cur.failed + 1;
   if (failed >= MAX_WRONG) {
     const lockedUntil = now + LOCKOUT_MS;
-    setLock(customerId, { ...lock, failed: 0, lockedUntil });
-    get().log('CORE', 'child_lock_locked_out', 'customer', { minutes: LOCKOUT_MS / 60000 });
+    put({ failed: 0, lockedUntil });
+    get().log('CORE', 'child_lock_locked_out', 'customer', { minutes: LOCKOUT_MS / 60000, key });
     // P2.4: tell the account owner on WhatsApp, so they know someone tried to order
     get().sendMessage({
       customerId, channel: 'whatsapp', featureId: 'P2', buttons: [],
-      text: `Someone entered the wrong Child PIN 3 times on your Meesho app at ${new Date(now).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}. Ordering is paused for 5 minutes. If this wasn’t you or your family, you can reset the PIN from Account → Child PIN Lock.`,
+      text: `Someone entered the wrong Child PIN 3 times on your Meesho app at ${new Date(now).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}. That order is blocked for 5 minutes. If this wasn’t you or your family, you can reset the PIN from Account → Child PIN Lock.`,
     });
     get().log('P2', 'owner_alert_sent', 'system', { channel: 'whatsapp' });
     return { ok: false, attemptsLeft: 0, lockedMs: LOCKOUT_MS };
   }
-  setLock(customerId, { ...lock, failed });
-  get().log('CORE', 'child_lock_pin_wrong', 'customer', { attemptsLeft: MAX_WRONG - failed });
+  put({ failed });
+  get().log('CORE', 'child_lock_pin_wrong', 'customer', { attemptsLeft: MAX_WRONG - failed, key });
   return { ok: false, attemptsLeft: MAX_WRONG - failed, lockedMs: 0 };
 }
 
 /** Turning child lock off requires the current PIN. */
 export function disableChildLock(customerId: string, pin: string): VerifyResult {
-  const r = verifyPin(customerId, pin);
+  const r = verifyPin(customerId, pin, SETTINGS_KEY);
   if (r.ok) {
     setLock(customerId, undefined);
     get().log('CORE', 'child_lock_disabled', 'customer', {});
@@ -98,7 +109,7 @@ export function resetPinWithOtp(customerId: string, otp: string, newPin: string)
     return 'bad_otp';
   }
   if (!isValidPin(newPin)) return 'bad_pin';
-  setLock(customerId, { pinHash: hashPin(customerId, newPin), failed: 0 });
+  setLock(customerId, { pinHash: hashPin(customerId, newPin) }); // a new PIN clears every lockout
   get().log('CORE', 'child_lock_pin_reset', 'customer', {});
   return 'ok';
 }

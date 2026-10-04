@@ -38,12 +38,39 @@ test('C · Dispatch layer', async ({ page }) => {
   await shot('1b-locked-5-minutes');
   const owner = (await store(page)).messages.filter((m: { customerId: string; channel: string; text: string }) => m.customerId === 'existing' && m.channel === 'whatsapp' && m.text.includes('Child PIN'));
   expect(owner.length).toBe(1); // owner alerted on WhatsApp
+  await expect(page.getByText('Only this order is blocked. You can still order something else with the PIN.')).toBeVisible();
 
+  // The lockout is for that order only: a different item can still be ordered with the right PIN
+  await sheet(page).getByRole('button', { name: 'Close' }).click();
+  await page.goto('/customer/product/P20');
+  const sz = page.getByRole('button', { name: 'M', exact: true });
+  if (await sz.isVisible()) await sz.click();
+  await page.getByRole('button', { name: 'Buy Now' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByText('Cash on Delivery').first().click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Place Order' }).click();
+  await expect(page.getByText('Enter your 4-digit child-lock PIN')).toBeVisible();
+  await shot('1c-other-order-not-blocked');
+  await pad(page, '1234');
+  await expect(page).toHaveURL(/order-placed/);
+
+  // Back to the kurti: still blocked → Forgot PIN → OTP reset
+  await page.goto('/customer/product/P02');
+  await page.getByRole('button', { name: 'M', exact: true }).click();
+  await page.getByRole('button', { name: 'Buy Now' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByText('Cash on Delivery').first().click();
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Place Order' }).click();
+  await expect(page.getByText('Too many wrong PINs')).toBeVisible();
   await sheet(page).getByRole('button', { name: 'Forgot PIN?' }).click();
   await sheet(page).getByRole('button', { name: 'Send OTP' }).click();
   const code = (await sheet(page).locator('span.font-mono').textContent())!.trim();
   await pad(page, code);
-  await shot('1c-otp-reset');
+  await shot('1d-otp-reset');
   await sheet(page).getByRole('button', { name: 'Verify' }).click();
   await pad(page, '4321');
   await pad(page, '4321');
@@ -59,9 +86,9 @@ test('C · Dispatch layer', async ({ page }) => {
   await shot('2-whatsapp-confirm');
 
   await page.goto('/transit?tab=confirm');
-  const row = page.locator('div.card, tr, li', { hasText: id }).first();
+  const row = page.locator('div.card', { hasText: id });
   await expect(row).toBeVisible();
-  await page.getByRole('button', { name: /No tap in 10 min/ }).first().click();
+  await row.getByRole('button', { name: /No tap in 10 min/ }).click();
   const queued = page.getByRole('button', { name: /9 am → place queued call/ });
   if (await queued.isVisible()) await queued.click(); // quiet hours (9 pm – 9 am) on the test machine
   await shot('2b-seller-awaiting-confirmation');

@@ -4,7 +4,7 @@ import { useCurrentCustomer } from '../../store';
 import { useUi } from '../../store/ui';
 import { useNow } from '../../lib/time';
 import {
-  MAX_WRONG, disableChildLock, enableChildLock, lockedFor, requestPinResetOtp, resetPinWithOtp, verifyPin,
+  MAX_WRONG, SETTINGS_KEY, disableChildLock, enableChildLock, lockedFor, requestPinResetOtp, resetPinWithOtp, verifyPin,
 } from '../../services/childLock';
 import { Sheet } from './ui';
 
@@ -103,16 +103,18 @@ function ResetFlow({ onDone }: { onDone: () => void }) {
 
 // ---------------------------------------------------------------- PIN gate (before ordering / turning off)
 
-export function PinGateSheet({ open, title, onClose, onSuccess, verify = verifyPin }: {
+export function PinGateSheet({ open, title, onClose, onSuccess, verify = verifyPin, lockKey = SETTINGS_KEY }: {
   open: boolean; title: string; onClose: () => void; onSuccess: () => void;
-  verify?: typeof verifyPin;
+  verify?: (customerId: string, pin: string, key?: string) => ReturnType<typeof verifyPin>;
+  lockKey?: string; // which order attempt this PIN is for (a lockout only blocks that one)
 }) {
+  const isOrder = lockKey !== SETTINGS_KEY;
   useNow(1000); // live lockout countdown
   const customer = useCurrentCustomer();
   const [pin, setPin] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [forgot, setForgot] = useState(false);
-  const locked = lockedFor(customer);
+  const locked = lockedFor(customer, lockKey);
 
   const close = () => { setPin(''); setMsg(null); setForgot(false); onClose(); };
 
@@ -123,6 +125,7 @@ export function PinGateSheet({ open, title, onClose, onSuccess, verify = verifyP
           <div className="space-y-3 text-center">
             <LockKeyhole size={30} className="mx-auto text-danger" />
             <p className="text-sm font-semibold">Too many wrong PINs</p>
+            {isOrder && <p className="text-[12px] text-ink-muted">Only this order is blocked. You can still order something else with the PIN.</p>}
             <p className="text-sm text-ink-muted">You can try again in <span className="font-mono font-bold text-ink">{Math.floor(locked / 60000)}:{String(Math.floor(locked / 1000) % 60).padStart(2, '0')}</span></p>
             <button className="text-sm font-semibold text-brand" onClick={() => setForgot(true)}>Forgot PIN?</button>
           </div>
@@ -132,15 +135,15 @@ export function PinGateSheet({ open, title, onClose, onSuccess, verify = verifyP
             <PinPad value={pin} error={!!msg && !msg.startsWith('PIN reset')} onChange={(v) => {
               setMsg(null); setPin(v);
               if (v.length === 4) {
-                const r = verify(customer.id, v);
+                const r = verify(customer.id, v, lockKey);
                 if (r.ok) { setPin(''); onSuccess(); return; }
                 setPin('');
-                setMsg(r.lockedMs > 0 ? 'Locked for 5 minutes.' : `Wrong PIN. ${r.attemptsLeft} attempt${r.attemptsLeft === 1 ? '' : 's'} left.`);
+                setMsg(r.lockedMs > 0 ? (isOrder ? 'This order is locked for 5 minutes.' : 'Locked for 5 minutes.') : `Wrong PIN. ${r.attemptsLeft} attempt${r.attemptsLeft === 1 ? '' : 's'} left.`);
               }
             }} />
             {msg && <p className={`text-center text-xs ${msg.startsWith('PIN reset') ? 'text-success' : 'text-danger'}`}>{msg}</p>}
             <button className="mx-auto block text-sm font-semibold text-brand" onClick={() => setForgot(true)}>Forgot PIN?</button>
-            <p className="text-center text-[11px] text-ink-muted">{MAX_WRONG} wrong attempts lock ordering for 5 minutes.</p>
+            <p className="text-center text-[11px] text-ink-muted">{MAX_WRONG} wrong attempts lock {isOrder ? 'this order' : 'it'} for 5 minutes.</p>
           </>
         )}
       </div>
@@ -148,17 +151,17 @@ export function PinGateSheet({ open, title, onClose, onSuccess, verify = verifyP
   );
 }
 
-/** Wrap any "place order" action: asks for the PIN first when child lock is on. */
+/** Wrap any "place order" action: asks for the PIN first when child lock is on. `key` identifies this order attempt. */
 export function useChildLockGate() {
   const customer = useCurrentCustomer();
-  const [pending, setPending] = useState<(() => void) | null>(null);
-  const guard = (action: () => void) => {
+  const [pending, setPending] = useState<{ action: () => void; key: string } | null>(null);
+  const guard = (action: () => void, key: string) => {
     if (!customer.childLock) action();
-    else setPending(() => action);
+    else setPending({ action, key });
   };
   const gate = (
-    <PinGateSheet open={!!pending} title="Child lock" onClose={() => setPending(null)}
-      onSuccess={() => { const a = pending; setPending(null); a?.(); }} />
+    <PinGateSheet open={!!pending} title="Child lock" lockKey={pending?.key} onClose={() => setPending(null)}
+      onSuccess={() => { const p = pending; setPending(null); p?.action(); }} />
   );
   return { guard, gate };
 }

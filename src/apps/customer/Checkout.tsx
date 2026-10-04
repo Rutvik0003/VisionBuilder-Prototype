@@ -15,6 +15,7 @@ import { placeHold, releaseHold, slotDates } from '../../services/slots';
 import { HoldTimer, SlotPicker } from './SlotPicker';
 import { afterOrderPlaced } from '../../services/ivr';
 import { useChildLockGate } from './ChildLock';
+import { orderLockKey } from '../../services/childLock';
 import { clusterInfo, openBoxEligible } from '../../services/catalog';
 import { useT } from '../../lib/strings';
 import { FeatureTag } from '../../components/FeatureTag';
@@ -195,7 +196,7 @@ export function Checkout() {
       go('delivery');
     } else if (step === 'delivery') go('payment');
     else if (step === 'payment') go('review');
-    else guard(() => { void placeNow(); }); // child lock: PIN first, if it's on
+    else guard(() => { void placeNow(); }, orderLockKey(lines.map((l) => ({ productId: l.product.id, size: l.size })))); // child lock: PIN first; a lockout blocks only this order
   };
 
   const placeNow = async () => {

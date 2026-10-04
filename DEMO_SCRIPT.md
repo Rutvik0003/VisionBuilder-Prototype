@@ -144,6 +144,7 @@ One continuous story that covers every feature in the checklist. Press **Reset d
 46. Order any item as COD → **Place Order** → the PIN sheet appears.
     - Enter a **wrong PIN 3 times**: "Too many wrong PINs", with a 5-minute countdown.
     - **Messages:** the owner's WhatsApp alert.
+    - Close the sheet and order a **different** item: the PIN works, because only the locked order is blocked. Go back to the first item: it is still locked.
 47. **Forgot PIN? → Send OTP** (the code shows under the box and in Messages) → enter it → **Verify** → set a new PIN twice → enter the new PIN → order placed.
 48. **Don't tap Confirm this time.**
     - **Seller & Transit → Awaiting confirmation tab:** the order is held and **Seller ships** is disabled.

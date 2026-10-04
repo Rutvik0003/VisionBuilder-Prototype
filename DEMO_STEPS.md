@@ -261,7 +261,13 @@ The delivery OTP is always printed on the rider screen ("Demo: this customer's O
 222. [C] Tap **0 0 0 0**.
 223. [C] Tap **1 1 1 1**.
 224. [C] Tap **2 2 2 2**.
-225. 🎙 "Three wrong PINs: ordering is paused for 5 minutes, and the owner gets a WhatsApp alert."
+225. 🎙 "Three wrong PINs: this order is locked for 5 minutes, and the owner gets a WhatsApp alert."
+225a. 🎙 "Only this order is blocked. Ordering something else still works."
+225b. [C] Close the PIN sheet (✕).
+225c. [C] **Home** → a different product → size → **Buy Now** → **Continue** → **Continue** → **Cash on Delivery** → **Continue** → **Place Order**.
+225d. [C] Tap **1 2 3 4** → the order is placed.
+225e. [C] Go back to the kurti → size **M** → **Buy Now** → **Continue** → **Continue** → **Cash on Delivery** → **Continue** → **Place Order**.
+225f. 🎙 "The kurti is still locked, with the countdown."
 226. [C] Tap **Forgot PIN?**
 227. [C] Tap **Send OTP**.
 228. [C] Type the 6-digit code shown under the keypad.

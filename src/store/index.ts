@@ -113,7 +113,7 @@ export const useStore = create<Store>()(
     }),
     {
       name: 'meesho-dice-demo',
-      version: 13, // bump whenever seed/model shape changes; old saved state is replaced by fresh seed
+      version: 14, // bump whenever seed/model shape changes; old saved state is replaced by fresh seed
       migrate: () => initialData() as unknown as Store,
       partialize: (s) =>
         Object.fromEntries(Object.entries(s).filter(([, v]) => typeof v !== 'function')) as DataState,
