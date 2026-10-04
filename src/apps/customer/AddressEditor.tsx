@@ -9,6 +9,7 @@ import {
   type AddressDraft, type PinInput, KNOWN_PINCODES, draftGeo, pinCheck, resolvePincode, saveAddress, sendRemotePinLink,
 } from '../../services/addresses';
 import { updateCheckout } from '../../services/cart';
+import { buyRedirect } from '../../services/redirect';
 import { PinMap } from '../../components/PinMap';
 import { FeatureTag } from '../../components/FeatureTag';
 import { useUi } from '../../store/ui';
@@ -125,6 +126,12 @@ export function AddressEditor() {
     showToast(existing ? 'Address updated' : 'Address saved');
     if (ret === 'checkout') { updateCheckout({ addressId: a.id }); nav('/customer/checkout', { replace: true }); }
     else if (ret.startsWith('product:')) nav(`/customer/product/${ret.slice(8)}`, { replace: true });
+    else if (ret.startsWith('redirect:')) {
+      // R1: the New User tapped "Buy now" on a nudge before having an address — finish the purchase now
+      const fresh = buyRedirect(ret.slice(9), customer.id);
+      if (fresh) { showToast(t('redirectBought', { item: useStore.getState().products.find((p) => p.id === fresh.items[0].productId)?.title ?? '' })); nav(`/customer/orders/${fresh.id}`, { replace: true }); }
+      else { showToast(t('redirectGone')); nav('/customer/inbox', { replace: true }); }
+    }
     else if (ret.startsWith('order:')) { log('C1-F2', 'check_directions', 'customer', { viaPin: !!pin }, ret.slice(6)); nav(`/customer/orders/${ret.slice(6)}`, { replace: true }); }
     else nav('/customer/addresses', { replace: true });
   };

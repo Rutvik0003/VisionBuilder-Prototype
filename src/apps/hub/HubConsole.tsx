@@ -10,6 +10,7 @@ import type { Order, RunId } from '../../types';
 import { fmtDate, fmtDateTime, rupees } from '../../lib/format';
 import { hubAccept, markNoReply, releaseHold } from '../../services/flow';
 import { ringVaani } from '../../services/ivr';
+import { redirectOf } from '../../services/redirect';
 import { CONFIDENCE_BADGE, sendRemotePinLink } from '../../services/addresses';
 import { REASON_LABEL, ACTION_LABEL, rescueAction } from '../../services/rescue';
 import { RUNS, RUN_CUTOFF, RUN_WINDOW, hubDates, isLocked, planRun, runCandidates, runKey } from '../../services/routing';
@@ -69,7 +70,7 @@ export function HubConsole() {
     { id: 'routes', label: 'Routes' },
     { id: 'live', label: 'Live' },
     { id: 'disputes', label: 'Disputes', n: orders.filter((o) => o.attempts.some((a) => a.dispute === 'open') || isAddressNotFound(o)).length },
-    { id: 'returns', label: 'Returns / Redirect', n: orders.filter((o) => (o.status === 'REFUSED_AFTER_INSPECTION' && ['qc', 'shelf'].includes(o.refusal?.redirect?.state ?? 'qc')) || o.status === 'ATTEMPT_FAILED').length },
+    { id: 'returns', label: 'Returns / Redirect', n: orders.filter((o) => ['qc', 'shelf'].includes(redirectOf(o)?.state ?? '') || o.status === 'ATTEMPT_FAILED').length },
     { id: 'risk', label: 'Risk' },
   ];
 

@@ -242,3 +242,12 @@ _This section supersedes the earlier "IVR order confirmation" notes._
 - **Valmo vs 3PL:** time slots, open-box, live tracking, "I'm not home" and changing the time are labelled "Valmo only". A 3PL order only gets the "Will you be home?" Yes.
 - **Maps:** pans and zooms are not animated. An animation still running when the screen changed made Leaflet throw a console error.
 - **Tests:** `npm run test:e2e` runs walkthroughs A–D plus a Reset-demo check with Playwright (dev server on port 5180). Screenshots go to `screenshots/<walkthrough>/<step>.png`.
+
+## Redirect Loop for RTO parcels (team request)
+- **RTO parcels join the loop:** marking a parcel RTO (after 3 failed attempts) now sends it into the Redirect Loop, the same as an open-box refusal. It was never opened, so the card reads "RTO · original packaging" and goes through the same QC.
+- **Only High demand goes on the shelf:** a High Demand Score puts the parcel on the redirect shelf for up to **3 days**. Medium or Low demand, or a slow-moving category (kitchen, beauty), goes straight back to the seller.
+- **Not sold in 3 days:** the parcel returns to the seller. In the demo that's the button "Not sold in 3 days → return to seller". On real dates the 3-day cap is enforced when the hub opens the Returns tab.
+- **Demo shoppers first:**
+  - Demo accounts are ranked first among nearby shoppers, so the main customer (Rekha) refusing a parcel pings the **New User (Kavita)**. Rekha herself is skipped as the refuser, or for "recent refusal".
+  - A New User with no saved address still counts as nearby. Tapping **Buy now** asks for an address, then completes the purchase.
+  - The hub's "Simulate … pays first" button is shown only for the background shoppers; demo accounts buy on their own phone.

@@ -7,6 +7,7 @@ import type { Order } from '../../types';
 import { fmtDate, fmtDateTime, rupees } from '../../lib/format';
 import { markInTransit, reachedHub, reportTransitDelay, acceptDelay, sellerShips } from '../../services/flow';
 import { canShip, cancelUnconfirmed, inQuietHours, placeConfirmCall, placeQueuedCall, releaseOrder } from '../../services/ivr';
+import { redirectOf } from '../../services/redirect';
 import { useUi } from '../../store/ui';
 import { FeatureTag } from '../../components/FeatureTag';
 import { DesktopShell } from '../../components/DesktopShell';
@@ -23,7 +24,7 @@ export function TransitApp() {
   const tab = (params.get('tab') as Tab) ?? 'orders';
   const awaiting = orders.filter((o) => o.status === 'PLACED' && !canShip(o));
   const refusals = allOrders.filter((o) => o.status === 'REFUSED_AFTER_INSPECTION');
-  const sales = allOrders.filter((o) => o.refusal?.redirect?.state === 'sold');
+  const sales = allOrders.filter((o) => redirectOf(o)?.state === 'sold');
 
   const TABS: { id: Tab; label: string; n?: number }[] = [
     { id: 'orders', label: 'Orders', n: orders.length },
@@ -244,15 +245,15 @@ function RefusalsTab({ orders }: { orders: Order[] }) {
 function RedirectSalesTab({ orders }: { orders: Order[] }) {
   const n = useNames();
   const customers = useStore((s) => s.customers);
-  if (orders.length === 0) return <Empty icon={<Tag size={24} />} title="No redirect sales yet" sub="Refused parcels resold to nearby shoppers on your listing show up here." />;
+  if (orders.length === 0) return <Empty icon={<Tag size={24} />} title="No redirect sales yet" sub="Refused or RTO parcels resold to nearby shoppers on your listing show up here." />;
   return (
     <div className="card divide-y divide-gray-100 p-2">
       {orders.map((o) => {
-        const r = o.refusal!.redirect!;
+        const r = redirectOf(o)!;
         return (
           <div key={o.id} className="flex flex-wrap items-center gap-3 px-2 py-2.5 text-sm">
             <Tag size={16} className="text-success" />
-            <span className="min-w-0 flex-1 truncate">{n.product(o).title} · sold on your listing to {customers.find((c) => c.id === r.buyerId)?.name}</span>
+            <span className="min-w-0 flex-1 truncate">{n.product(o).title} · {o.rto ? 'RTO parcel' : 'refused at the door'} · sold on your listing to {customers.find((c) => c.id === r.buyerId)?.name}</span>
             <span className="font-semibold">{rupees(r.price ?? 0)}</span>
             <span className="font-mono text-xs text-ink-muted">new order #{r.newOrderId} · was #{o.id}</span>
           </div>

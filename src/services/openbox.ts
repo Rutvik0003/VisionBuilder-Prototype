@@ -130,8 +130,10 @@ export function markRTO(orderId: string) {
   const o = findOrder(orderId);
   if (failedAttempts(o) < RTO_AFTER_ATTEMPTS) return;
   const reason = o.attempts.at(-1)?.reason ?? 'Not delivered';
-  setOrderStatus(orderId, 'RTO', `Returned to seller after ${failedAttempts(o)} attempts`, { rto: { at: nowIso(), reason } });
+  setOrderStatus(orderId, 'RTO', `Not delivered after ${failedAttempts(o)} attempts · returning to the seller`, { rto: { at: nowIso(), reason } });
   get().log('CORE', 'rto_marked', 'hub', { attempts: failedAttempts(o), lastReason: reason }, orderId);
+  // R1: an RTO parcel was never opened, so it can be resold nearby before it travels back to the seller
+  startRedirect(orderId);
 }
 
 /** Try again tomorrow: the parcel waits in Held and rejoins that day's run automatically. */

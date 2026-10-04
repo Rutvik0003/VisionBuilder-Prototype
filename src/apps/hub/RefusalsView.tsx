@@ -3,7 +3,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { Camera, CalendarPlus, ClipboardCheck, Clock3, IndianRupee, PackageX, Repeat2, Send, Undo2 } from 'lucide-react';
 import { useUi } from '../../store/ui';
 import { LabelButton } from '../../components/ShippingLabel';
-import { BONUS_PER_REDIRECT, HARD_CAP_DAYS, buyRedirect, enforceHoldCap, hubBonus, nearbyMatches, nudgeNext5, nudgeTop5, returnFromShelf, runQualityCheck } from '../../services/redirect';
+import { BONUS_PER_REDIRECT, redirectOf, HARD_CAP_DAYS, buyRedirect, enforceHoldCap, hubBonus, nearbyMatches, nudgeNext5, nudgeTop5, returnFromShelf, runQualityCheck } from '../../services/redirect';
 import { useStore } from '../../store';
 import type { Order } from '../../types';
 import { fmtDate, fmtDateTime, rupees } from '../../lib/format';
@@ -16,13 +16,14 @@ export function RefusalsView({ hubId, onOpen }: { hubId: string; onOpen: (id: st
   const orders = useStore(useShallow((s) => s.orders.filter((o) => o.hubId === hubId)));
   const events = useStore((s) => s.events);
   const customers = useStore((s) => s.customers);
-  const products = useStore((s) => s.products);
   const ids = new Set(orders.map((o) => o.id));
   useEffect(() => { enforceHoldCap(); }, []);
   const name = (o: Order) => customers.find((c) => c.id === o.customerId)?.name ?? '';
-  const item = (o: Order) => products.find((p) => p.id === o.items[0].productId)?.title ?? '';
 
   const refused = orders.filter((o) => o.status === 'REFUSED_AFTER_INSPECTION');
+  // Redirect Loop candidates: open-box refusals and RTO parcels (newest first)
+  const loop = orders.filter((o) => o.status === 'REFUSED_AFTER_INSPECTION' || o.status === 'RTO')
+    .sort((a, b) => (b.rto?.at ?? b.refusal?.at ?? '').localeCompare(a.rto?.at ?? a.refusal?.at ?? ''));
   const failed = orders.filter((o) => o.status === 'ATTEMPT_FAILED').sort((a, b) => failedAttempts(b) - failedAttempts(a));
   const rto = orders.filter((o) => o.status === 'RTO');
   const count = (name: string) => events.filter((e) => e.name === name && e.orderId && ids.has(e.orderId)).length;
@@ -30,7 +31,7 @@ export function RefusalsView({ hubId, onOpen }: { hubId: string; onOpen: (id: st
   const saved = [
     { label: 'Cancelled before the last mile', n: count('reverse_trip_avoided'), hint: 'Delay alert → free cancel' },
     { label: 'Rescheduled instead of failing', n: count('check_change') + count('not_home_tapped') + count('attempt_rescheduled'), hint: 'Home check, “I’m not home”, missed it' },
-    { label: 'Refusals redirected', n: refused.filter((o) => o.refusal?.redirect?.state === 'sold').length, hint: 'Redirect Loop, no trip back to the seller' },
+    { label: 'Parcels redirected', n: loop.filter((o) => redirectOf(o)?.state === 'sold').length, hint: 'Redirect Loop, no trip back to the seller' },
   ];
 
   return (
@@ -47,9 +48,9 @@ export function RefusalsView({ hubId, onOpen }: { hubId: string; onOpen: (id: st
         <div className="card p-3"><div className="flex items-center text-2xl font-bold text-brand"><IndianRupee size={20} />{hubBonus(hubId)}</div><div className="text-xs text-ink-muted">Hub bonus (₹{BONUS_PER_REDIRECT} per redirect)</div></div>
       </div>
 
-      <Section n={1} title="Open-box refusals → Redirect Loop" sub="Resealed at the door. Quality-check it, and if local demand is high, offer it to nearby shoppers who saved this exact item. First to pay gets it tomorrow." right={<FeatureTag id="R1" />}>
-        {refused.length === 0 ? <Empty text="No refusals. They appear here when a customer refuses during an open-box check." /> : (
-          <div className="space-y-2">{refused.map((o) => <RedirectCard key={o.id} o={o} onOpen={onOpen} />)}</div>
+      <Section n={1} title="Refusals & RTO → Redirect Loop" sub="Open-box refusals (resealed at the door) and RTO parcels (never opened). Quality-check it; if local demand is High, offer it to nearby shoppers who saved this exact item for up to 3 days. First to pay gets it tomorrow; not sold → back to the seller." right={<FeatureTag id="R1" />}>
+        {loop.length === 0 ? <Empty text="Nothing here yet. Parcels appear when a customer refuses an open-box check, or when you mark a failed delivery RTO." /> : (
+          <div className="space-y-2">{loop.map((o) => <RedirectCard key={o.id} o={o} onOpen={onOpen} />)}</div>
         )}
       </Section>
 
@@ -84,31 +85,19 @@ export function RefusalsView({ hubId, onOpen }: { hubId: string; onOpen: (id: st
         )}
       </Section>
 
-      {rto.length > 0 && (
-        <Section n={3} title="Returned to origin" sub="Final: going back to the seller.">
-          <div className="divide-y divide-gray-100 rounded-lg border border-gray-100">
-            {rto.map((o) => (
-              <button key={o.id} onClick={() => onOpen(o.id)} className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50">
-                <span className="flex-1 truncate">{name(o)} · {item(o)}</span>
-                <span className="text-xs text-ink-muted">{o.rto?.reason} · {o.rto && fmtDateTime(o.rto.at)}</span>
-              </button>
-            ))}
-          </div>
-        </Section>
-      )}
     </div>
   );
 }
 
-/** R1 Redirect Loop for one sealed refusal: QC → demand score → nudges → first to pay, or back to the seller. */
+/** R1 Redirect Loop for one refused or RTO parcel: QC → demand score → nudges → first to pay, or back to the seller. */
 function RedirectCard({ o, onOpen }: { o: Order; onOpen: (id: string) => void }) {
   const customers = useStore((s) => s.customers);
   const products = useStore((s) => s.products);
   const allOrders = useStore((s) => s.orders);
   const showToast = useUi((s) => s.showToast);
-  const [qc, setQc] = useState({ rightItem: true, undamaged: !o.refusal!.damaged, sealIntact: true });
-  const r = o.refusal!;
-  const rd = r.redirect;
+  const r = o.refusal;
+  const [qc, setQc] = useState({ rightItem: true, undamaged: !r?.damaged, sealIntact: true });
+  const rd = redirectOf(o);
   const p = products.find((x) => x.id === o.items[0].productId)!;
   const name = (id?: string) => customers.find((c) => c.id === id)?.name ?? '';
   const matches = rd?.state === 'shelf' ? nearbyMatches(o.id) : [];
@@ -123,11 +112,11 @@ function RedirectCard({ o, onOpen }: { o: Order; onOpen: (id: string) => void })
         </span>
         <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(o.id)}>
           <div className="truncate font-medium hover:text-brand">{name(o.customerId)} · {p.title}{o.items[0].size ? ` (${o.items[0].size})` : ''}</div>
-          <div className="text-xs text-ink-muted">Refused: {r.reason}{r.damaged ? ' · damaged' : ''} · {fmtDateTime(r.at)}</div>
+          <div className="text-xs text-ink-muted">{r ? <>Refused: {r.reason}{r.damaged ? ' · damaged' : ''} · {fmtDateTime(r.at)}</> : <>RTO after {failedAttempts(o)} failed attempts · {o.rto?.reason} · {o.rto && fmtDateTime(o.rto.at)}</>}</div>
         </button>
-        <span className="chip bg-gray-100 font-mono font-semibold">Seal {r.sealId}</span>
-        {r.customerChoice === 'replacement' && <span className="chip bg-sky-50 text-sky-700">Customer ordered a replacement · #{r.replacementOrderId}</span>}
-        {r.customerChoice === 'closed' && <span className="chip bg-gray-100 text-ink-muted">Customer closed the order</span>}
+        {r ? <span className="chip bg-gray-100 font-mono font-semibold">Seal {r.sealId}</span> : <span className="chip bg-red-50 font-semibold text-danger">RTO · original packaging</span>}
+        {r?.customerChoice === 'replacement' && <span className="chip bg-sky-50 text-sky-700">Customer ordered a replacement · #{r.replacementOrderId}</span>}
+        {r?.customerChoice === 'closed' && <span className="chip bg-gray-100 text-ink-muted">Customer closed the order</span>}
       </div>
 
       {(!rd || rd.state === 'qc') && (
@@ -141,7 +130,7 @@ function RedirectCard({ o, onOpen }: { o: Order; onOpen: (id: string) => void })
             ))}
             <button className="btn-primary ml-auto !py-1.5 text-xs" onClick={() => runQualityCheck(o.id, qc)}><ClipboardCheck size={14} /> Submit QC</button>
           </div>
-          <div className="mt-1.5 text-[11px] text-ink-muted">Pass all three → scored for local demand and put on the redirect shelf. Fail any → returned to the seller.</div>
+          <div className="mt-1.5 text-[11px] text-ink-muted">Pass all three → scored for local demand. High → redirect shelf for up to 3 days. Anything else → returned to the seller.</div>
         </div>
       )}
 
@@ -158,7 +147,7 @@ function RedirectCard({ o, onOpen }: { o: Order; onOpen: (id: string) => void })
         <>
           <div className="flex flex-wrap items-center gap-2 rounded-lg bg-brand-light px-3 py-2 text-xs text-brand">
             <Clock3 size={14} /> On the redirect shelf until <b>{fmtDate(rd.holdUntil!)}</b> · hold window {rd.holdDays} day{rd.holdDays === 1 ? '' : 's'} for {p.category} (cap {HARD_CAP_DAYS} days)
-            <button className="btn-ghost ml-auto !py-1 text-xs" onClick={() => returnFromShelf(o.id)}><Undo2 size={13} /> Hold window ended → return</button>
+            <button className="btn-ghost ml-auto !py-1 text-xs" onClick={() => returnFromShelf(o.id, `Not sold in ${rd.holdDays} days`)}><Undo2 size={13} /> Not sold in {rd.holdDays} days → return to seller</button>
           </div>
           <div>
             <div className="mb-1 flex items-center gap-2 text-xs font-semibold">
@@ -181,7 +170,8 @@ function RedirectCard({ o, onOpen }: { o: Order; onOpen: (id: string) => void })
                     {m.recentRefusal && <span className="chip bg-red-50 text-danger">Recent refusal · skipped</span>}
                     {m.nudgedThisWeek && !wasNudged && <span className="chip bg-gray-100 text-ink-muted">Nudged this week</span>}
                     {wasNudged && <span className="chip bg-emerald-50 text-success">Nudged{m.customer.whatsappOptIn ? ' · push + WhatsApp' : ' · push'}</span>}
-                    {wasNudged && (
+                    {wasNudged && !m.customer.background && <span className="chip bg-brand-light text-brand">Demo account · buys from Messages on their phone</span>}
+                    {wasNudged && m.customer.background && (
                       <button className="btn-primary !py-0.5 text-[11px]" onClick={() => { if (buyRedirect(o.id, m.customer.id)) showToast(`${m.customer.name} paid first · new order created`); }}>
                         Simulate: {m.customer.name.split(' ')[0]} pays first
                       </button>

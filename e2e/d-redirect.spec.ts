@@ -67,20 +67,20 @@ test('D · Redirect loop', async ({ page }) => {
   await expect(page.getByRole('button', { name: /^Simulate: .* pays first$/ }).first()).toBeVisible();
   await shot('3-top-5-nudged');
 
-  // A nearby shopper (New User, Hardoi address) sees it on Home → "Ready near you, delivered tomorrow" → buys first
+  // The New User (no address yet) is a nearby demo shopper → gets the ping → Buy now → adds address → bought
+  await expect(page.getByText('Demo account · buys from Messages on their phone')).toBeVisible();
   await asCustomer(page, 'New User');
-  await page.goto('/customer/addresses/new');
+  await page.goto('/customer/inbox');
+  await expect(page.getByText(/Sealed, quality-checked, ships from near you/).first()).toBeVisible();
+  await shot('3b-new-user-demand-ping');
+  await page.getByRole('button', { name: 'Buy now' }).first().click();
+  await expect(page).toHaveURL(/addresses\/new\?return=redirect:/);
   await page.getByLabel('Pincode').fill('241001');
   await page.getByRole('button', { name: 'Confirm pin' }).click();
   await page.getByLabel('Full name').fill('Kavita Patel');
   await page.getByLabel('House / flat / shop no.').fill('Patel Kirana Store');
   await page.getByLabel('Area, street, village').fill('Railway Ganj');
   await page.getByRole('button', { name: 'Save address' }).click();
-  await page.goto('/customer');
-  await expect(page.getByText('Ready near you, delivered tomorrow').first()).toBeVisible();
-  await shot('3b-ready-near-you');
-  await page.getByRole('button', { name: /Floral Rayon Kurti.*Sealed · quality-checked/ }).click();
-  await page.getByRole('button', { name: /^Buy now · ₹499/ }).click();
   await expect(page).toHaveURL(/\/customer\/orders\//);
   await shot('3c-bought-delivered-tomorrow');
   await page.goto('/hub/HUB_HARDOI?view=returns');
@@ -100,5 +100,20 @@ test('D · Redirect loop', async ({ page }) => {
   await page.locator('div.bg-emerald-50', { hasText: 'Sold to' }).getByRole('button', { name: 'Label' }).click();
   await expect(page.getByText('VALMO')).toBeVisible();
   await shot('4b-new-label');
+  await page.keyboard.press('Escape');
+  await page.goto('/hub/HUB_HARDOI?view=returns');
+
+  // 5. RTO parcel (Ramesh Chandra, 3 failed attempts) → Redirect Loop → not sold in 3 days → back to the seller
+  const failedRow = page.locator('div.flex-wrap', { hasText: 'Ramesh Chandra' }).filter({ has: page.getByRole('button', { name: 'Mark RTO' }) });
+  await failedRow.getByRole('button', { name: 'Mark RTO' }).click();
+  const rtoCard = page.locator('div.rounded-lg.border', { hasText: 'RTO · original packaging' });
+  await expect(rtoCard).toBeVisible();
+  await rtoCard.getByRole('button', { name: 'Submit QC' }).click();
+  await expect(rtoCard.getByText('Demand Score: High')).toBeVisible();
+  await expect(rtoCard.getByText(/On the redirect shelf until/)).toBeVisible();
+  await shot('5-rto-on-redirect-shelf');
+  await rtoCard.getByRole('button', { name: /Not sold in 3 days → return to seller/ }).click();
+  await expect(rtoCard.getByText(/Returning to the seller · Not sold in 3 days/)).toBeVisible();
+  await shot('5b-rto-returned-after-3-days');
   noErrors();
 });

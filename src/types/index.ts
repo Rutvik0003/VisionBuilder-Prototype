@@ -149,7 +149,7 @@ export interface Order {
   sealId?: string;
   inspection?: Inspection; // C2-F3 open-box at the door
   refusal?: Refusal; // C2-F3 refused after inspection
-  rto?: { at: string; reason: string }; // returned to origin
+  rto?: { at: string; reason: string; redirect?: Redirect }; // returned to origin (R1: may be resold nearby first)
   replacementFor?: string; // this order replaces one refused at the door (C2-F3)
   redirectOf?: string; // R1: this order buys a parcel refused nearby
   ivr?: 'ringing' | 'confirmed' | 'cancelled' | 'missed'; // order-confirmation IVR call after placing

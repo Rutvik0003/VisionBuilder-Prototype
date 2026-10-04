@@ -1,4 +1,5 @@
-// R1 · Redirect Loop: a parcel refused at the door (open-box, resealed with a seal ID) is quality-checked at the hub,
+// R1 · Redirect Loop: a parcel refused at the door (open-box, resealed with a seal ID) or marked RTO after failed
+// attempts (still in its original packaging) is quality-checked at the hub,
 // scored for local demand, and offered to nearby shoppers who have the exact item in their cart / wishlist.
 // The first to pay gets it, delivered tomorrow from the hub — no trip back to the seller.
 // No clock: "next 5 after a few hours" and "hold window ended" are hub buttons; the 3-day cap also applies on real dates.
@@ -19,7 +20,7 @@ const orderId = customAlphabet('0123456789', 9);
 export const BONUS_PER_REDIRECT = 10;
 export const HARD_CAP_DAYS = 3;
 /** R1.8 learned hold window per category: fast movers 2–3 days, slow movers return at once. */
-export const HOLD_DAYS: Record<Product['category'], number> = { fashion: 3, home: 2, kitchen: 0, beauty: 0 };
+export const HOLD_DAYS: Record<Product['category'], number> = { fashion: 3, home: 3, kitchen: 0, beauty: 0 };
 
 /** Stable pseudo-random 0..1 from a string (keeps the demo deterministic). */
 function rand(key: string) {
@@ -30,17 +31,20 @@ function rand(key: string) {
 
 const productOf = (o: Order) => get().products.find((p) => p.id === o.items[0].productId)!;
 
+/** The redirect record, for an open-box refusal or an RTO parcel. */
+export const redirectOf = (o: Order) => o.refusal?.redirect ?? o.rto?.redirect;
+
 function patchRedirect(o: Order, patch: Partial<Redirect>) {
-  const r = o.refusal!;
-  const redirect: Redirect = { state: 'qc', nudged: { top: [], next: [] }, ...r.redirect, ...patch };
-  updateOrder(o.id, { refusal: { ...r, redirect } });
+  const redirect: Redirect = { state: 'qc', nudged: { top: [], next: [] }, ...redirectOf(o), ...patch };
+  if (o.refusal) updateOrder(o.id, { refusal: { ...o.refusal, redirect } });
+  else if (o.rto) updateOrder(o.id, { rto: { ...o.rto, redirect } });
   return redirect;
 }
 
-/** Called when an open-box parcel is refused and resealed (only sealed parcels can be redirected). */
+/** Called when an open-box parcel is refused and resealed, or a parcel is marked RTO (never opened). */
 export function startRedirect(refusedOrderId: string) {
   const o = findOrder(refusedOrderId);
-  if (!o.refusal?.sealId) return;
+  if (!o.refusal?.sealId && !o.rto) return;
   patchRedirect(o, { state: 'qc' });
 }
 
@@ -66,7 +70,9 @@ export function nearbyMatches(refusedOrderId: string): Match[] {
   for (const c of s.customers) {
     if (c.id === o.customerId) continue;
     const addr = s.addresses.find((a) => a.customerId === c.id && !a.deleted && a.hubId === o.hubId);
-    if (!addr) continue;
+    // The New User has no saved address yet: the app's location puts them near this hub; they add an address when buying.
+    const newUserNearby = !c.background && !s.addresses.some((a) => a.customerId === c.id && !a.deleted);
+    if (!addr && !newUserNearby) continue;
     const demo = !c.background;
     const r = rand(`${c.id}|${p.clusterId}`);
     if (!demo && r < 0.25) continue; // ~75% of nearby shoppers have this exact item saved (demo data)
@@ -77,7 +83,8 @@ export function nearbyMatches(refusedOrderId: string): Match[] {
     const week = c.redirectNudgedAt ? dayjs().diff(dayjs(c.redirectNudgedAt), 'day') < 7 : false;
     out.push({ customer: c, source: r > 0.6 ? 'wishlist' : 'cart', addedDaysAgo, revisits, deliveries: c.deliveredOrders, recentRefusal, score, nudgedThisWeek: week });
   }
-  return out.sort((a, b) => b.score - a.score);
+  // Demo accounts first (so a demo can show the nudge on the New User's phone), then by score
+  return out.sort((a, b) => Number(!!a.customer.background) - Number(!!b.customer.background) || b.score - a.score);
 }
 
 // ---------------------------------------------------------------- R1.2 quality check + R1.3 demand score
@@ -99,7 +106,7 @@ export function demandFor(refusedOrderId: string): NonNullable<Redirect['demand'
 export function runQualityCheck(refusedOrderId: string, qc: { rightItem: boolean; undamaged: boolean; sealIntact: boolean }) {
   const s = get();
   const o = findOrder(refusedOrderId);
-  if (!o.refusal) return;
+  if (!o.refusal && !o.rto) return;
   const passed = qc.rightItem && qc.undamaged && qc.sealIntact;
   s.log('R1', 'quality_check', 'hub', { ...qc, passed }, o.id);
   if (!passed) {
@@ -110,10 +117,10 @@ export function runQualityCheck(refusedOrderId: string, qc: { rightItem: boolean
   const demand = demandFor(o.id);
   const p = productOf(o);
   s.log('R1', 'demand_scored', 'system', { score: demand.score, ...demand.inputs }, o.id);
-  // High → hold for the learned window; Medium → hold briefly (1 day); Low → return at once. Hard cap 3 days.
-  const holdDays = demand.score === 'Low' ? 0 : Math.min(HARD_CAP_DAYS, demand.score === 'High' ? HOLD_DAYS[p.category] : Math.min(1, HOLD_DAYS[p.category]));
+  // Only High demand goes on the shelf, for up to 3 days (slow-moving categories return at once). Not sold by then → seller.
+  const holdDays = demand.score === 'High' ? Math.min(HARD_CAP_DAYS, HOLD_DAYS[p.category]) : 0;
   if (holdDays === 0) {
-    patchRedirect(o, { state: 'returned', qc: { ...qc, passed }, demand, holdDays, returnReason: demand.score === 'Low' ? 'Low local demand' : 'Slow-moving category' });
+    patchRedirect(o, { state: 'returned', qc: { ...qc, passed }, demand, holdDays, returnReason: demand.score !== 'High' ? `${demand.score} local demand` : 'Slow-moving category' });
     s.log('R1', 'returned_to_seller', 'system', { reason: 'Low demand / slow category' }, o.id);
     return;
   }
@@ -126,7 +133,7 @@ export function runQualityCheck(refusedOrderId: string, qc: { rightItem: boolean
 function nudge(refusedOrderId: string, wave: 'top' | 'next') {
   const s = get();
   const o = findOrder(refusedOrderId);
-  const r = o.refusal?.redirect;
+  const r = redirectOf(o);
   if (!r || r.state !== 'shelf') return [];
   const already = new Set([...r.nudged.top, ...r.nudged.next]);
   const pick = nearbyMatches(o.id).filter((m) => !m.recentRefusal && !m.nudgedThisWeek && !already.has(m.customer.id)).slice(0, 5);
@@ -151,11 +158,17 @@ export const nudgeNext5 = (id: string) => nudge(id, 'next');
 
 // ---------------------------------------------------------------- R1.7 sale
 
+/** Can this shopper buy it right now (needs a delivery address served by the parcel's hub)? */
+export function needsAddressToBuy(refusedOrderId: string, buyerId: string) {
+  const o = findOrder(refusedOrderId);
+  return !get().addresses.some((a) => a.customerId === buyerId && !a.deleted && a.hubId === o.hubId);
+}
+
 /** First to pay gets it. Closes the refused order, prints a new invoice + label, adds the parcel to tomorrow's route. */
 export function buyRedirect(refusedOrderId: string, buyerId: string): Order | null {
   const s = get();
   const o = findOrder(refusedOrderId);
-  const r = o.refusal?.redirect;
+  const r = redirectOf(o);
   if (!r || r.state !== 'shelf') return null; // someone else already paid
   const buyer = s.customers.find((c) => c.id === buyerId)!;
   const address = s.addresses.find((a) => a.customerId === buyerId && !a.deleted && a.hubId === o.hubId);
@@ -187,10 +200,10 @@ export function buyRedirect(refusedOrderId: string, buyerId: string): Order | nu
   return fresh;
 }
 
-/** R1.8: hold window ended (button, or the 3-day cap on real dates) → return to seller. */
-export function returnFromShelf(refusedOrderId: string, reason = 'Hold window ended') {
+/** R1.8: not sold within the hold window (button, or the 3-day cap on real dates) → return to seller. */
+export function returnFromShelf(refusedOrderId: string, reason = 'Not sold in 3 days') {
   const o = findOrder(refusedOrderId);
-  if (o.refusal?.redirect?.state !== 'shelf') return;
+  if (redirectOf(o)?.state !== 'shelf') return;
   patchRedirect(o, { state: 'returned', returnReason: reason });
   get().log('R1', 'returned_to_seller', 'system', { reason }, o.id);
 }
@@ -199,7 +212,7 @@ export function returnFromShelf(refusedOrderId: string, reason = 'Hold window en
 export function enforceHoldCap() {
   const today = dayjs().format('YYYY-MM-DD');
   for (const o of get().orders) {
-    const r = o.refusal?.redirect;
+    const r = redirectOf(o);
     if (r?.state === 'shelf' && r.holdUntil && r.holdUntil < today) returnFromShelf(o.id, `Hold cap reached (${HARD_CAP_DAYS} days)`);
   }
 }
@@ -208,9 +221,9 @@ export function enforceHoldCap() {
 export function readyNearYou(customerId: string, hubId: string | null | undefined) {
   if (!hubId) return [];
   return get().orders.filter((o) => o.hubId === hubId && o.customerId !== customerId
-    && o.refusal?.redirect?.state === 'shelf' && o.refusal.redirect.demand?.score === 'High');
+    && redirectOf(o)?.state === 'shelf' && redirectOf(o)?.demand?.score === 'High');
 }
 
 export function hubBonus(hubId: string) {
-  return get().orders.filter((o) => o.hubId === hubId && o.refusal?.redirect?.state === 'sold').length * BONUS_PER_REDIRECT;
+  return get().orders.filter((o) => o.hubId === hubId && redirectOf(o)?.state === 'sold').length * BONUS_PER_REDIRECT;
 }

@@ -13,7 +13,7 @@ import { disputeAttempt } from '../../services/delivery';
 import { closeRefusedOrder } from '../../services/openbox';
 import { cancelUnconfirmed, confirmOrder, payUpiToShip } from '../../services/ivr';
 import { startCheckout } from '../../services/cart';
-import { buyRedirect } from '../../services/redirect';
+import { buyRedirect, needsAddressToBuy, redirectOf } from '../../services/redirect';
 import { ShareLocationSheet } from './DeliveryCards';
 import { FeatureTag } from '../../components/FeatureTag';
 import { BottomNav, EmptyState, PageHeader, Screen } from './ui';
@@ -41,7 +41,7 @@ function buttonLive(action: string, orders: Order[]) {
   if (kind === 'ivr_confirm' || kind === 'ivr_cancel') return os.some((o) => o.status === 'PLACED' && !!o.confirm && ['awaiting', 'never_reached'].includes(o.confirm.state));
   if (kind === 'pay_upi_ship') return os.some((o) => o.status === 'PLACED' && o.payment === 'COD' && o.confirm?.state === 'never_reached');
   if (kind === 'reorder') return os.length > 0;
-  if (kind === 'redirect_buy') return os.some((o) => o.refusal?.redirect?.state === 'shelf');
+  if (kind === 'redirect_buy') return os.some((o) => redirectOf(o)?.state === 'shelf');
   return false;
 }
 
@@ -77,6 +77,11 @@ export function Inbox() {
       nav('/customer/checkout');
     }
     else if (kind === 'redirect_buy') {
+      if (redirectOf(first)?.state === 'shelf' && needsAddressToBuy(orderIds[0], customer.id)) {
+        showToast('Add your delivery address to buy this');
+        nav(`/customer/addresses/new?return=redirect:${orderIds[0]}`);
+        return;
+      }
       const fresh = buyRedirect(orderIds[0], customer.id);
       if (!fresh) { showToast(t('redirectGone')); return; }
       const title = useStore.getState().products.find((p) => p.id === fresh.items[0].productId)?.title ?? '';
