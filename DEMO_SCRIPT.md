@@ -22,7 +22,7 @@ One continuous story that covers every feature in the checklist. Press **Reset d
 ---
 
 ## Part 1 · Intro (30 s)
-1. **Launcher:** "Every app is a role: customer, seller/transit, hub manager, rider, plus network ops and the activity log. Nothing moves on a timer; each step is a button."
+1. **Launcher:** "Every app is a role: customer, seller/transit, hub manager, rider. Nothing moves on a timer; each step is a button."
 
 ## Part 2 · New user, catalogue and address (Kavita) · ~2 min · C3-F1, C2-F1
 2. **Launcher → New User.** The product cards show **no delivery date**, only a prompt to add an address.
@@ -39,7 +39,6 @@ One continuous story that covers every feature in the checklist. Press **Reset d
    - "When should we deliver?" with its sub-text, the day chips, and **Any time (fastest)** selected by default.
    - Click through the days until one shows **Evening "Full"**, greyed out and not selectable.
    - Choose **Saturday → Afternoon 12-4**. The banner reads "Slot held for you. Place the order before the timer ends." with a countdown.
-   - Switch on **Need it by a date?**, pick a date and show the warning, then switch it off again.
 7. **Payment step:** **Cash on Delivery** → **Deliver on or after → Sat** (payday cash) → **Continue → Place Order**.
 8. **Order placed:** the note says Meesho will ask her to confirm. A first COD order is risk-flagged.
 9. **Messages:**
@@ -109,35 +108,33 @@ One continuous story that covers every feature in the checklist. Press **Reset d
     - Point out **Abort for safety** at the bottom.
 33. **Rekha → Account → Addresses:** Shop now shows **"Verified by 1 delivery"**. An OTP delivery within 30 m of the pin verifies it at once [D1.8].
 
-## Part 8 · Refusal → Redirect Loop → New User buys · ~3.5 min · R1
+## Part 8 · Open-box refusal → back to the seller · ~2 min · C2-F3
 34. **Rekha** orders the same kurti again: COD + **Open-box**, to the Shop address.
-    - On Home, point out "Hiding listings of items you've already ordered" [C3-F1].
     - Confirm → ship → Scan in → Yes → plan and publish → rider Start (same as steps 27–29).
 35. **Rider → Rekha's stop → Arrived → Open-box check → seal photo → Start inspection → Customer refuses:**
     - Reason **Changed mind** → **Take item photo** → **Scan** (fills the seal ID, e.g. TB-123456).
-    - **Reseal in tamper-evident bag** → the seal ID is shown on screen.
+    - **Reseal in tamper-evident bag** → the stop shows the seal ID and "take it back to the hub, it goes to the seller".
 36. **Rekha → Messages:** offered **Order again** (replacement) or **Close order**.
     - Tap **Order again** to show the replacement sheet, close it, then tap **Close order**.
-37. **Seller & Transit → Open-box refusals tab:** the seller sees the seal and item photos and the seal ID.
-38. **Hub → Returns / Redirect:**
-    - The refusal card shows reason, seal ID and the quality check → leave all 3 ticked → **Submit QC**.
+37. **Seller & Transit → Open-box refusals tab:** the seller sees the seal and item photos, the seal ID, and "Returning to you".
+38. **Hub → Returns / Redirect → Open-box refusals → back to the seller:** "Tamper bag TB-… · Returning to seller".
+    - Say: "It was opened at the door, so the hub can't check it or resell it."
+
+## Part 9 · RTO → Redirect Loop → New User buys · ~3 min · R1
+39. **Hub → Returns / Redirect → Failed deliveries:**
+    - Ramesh Chandra shows **3/3** dots → **Mark RTO** (only enabled after 3 failures). **Re-attempt tomorrow** is the other option.
+40. His parcel appears under **RTO parcels → Redirect Loop**, labelled **RTO · original packaging**.
+    - **Packaging check · parcel stays sealed:** Seller seal intact? · Label matches the order? · Box undamaged? Leave all 3 ticked → **Submit check**.
     - **Demand Score: High** with its inputs (nearby carts/wishlists, searches in 7 days, sales over 30–90 days, season).
     - "On the redirect shelf until … · hold window 3 days (cap 3 days)".
-    - The nearby shopper list puts **Kavita Patel (Demo)** first → **Nudge top 5**. Each shopper gets push, and WhatsApp if opted in.
-    - Optional: **Nudge next 5 (a few hours later)**.
-39. **Kavita → Home:** **"Ready near you, delivered tomorrow"** shows the kurti. **Messages** has the ping: "Sealed, quality-checked, ships from near you – delivered tomorrow… First to pay gets it."
-    - Tap **Buy now** (either place) → the order is created for tomorrow.
-40. **Hub → Returns / Redirect:**
-    - The card reads **"Sold to Kavita Patel"**: new order on tomorrow's route, first order closed, **+₹10 hub bonus**. The **Hub bonus** card reads ₹10.
+41. The nearby shopper list puts **Kavita Patel (Demo)** first → **Nudge top 5**. Each shopper gets push, and WhatsApp if opted in. Optional: **Nudge next 5 (a few hours later)**.
+42. **Kavita → Home:** **"Ready near you, delivered tomorrow"**. **Messages** has the ping: "Still in its original sealed pack, checked at your local hub – delivered tomorrow… First to pay gets it."
+    - Tap **Buy now** (either place). If she has no address yet, she adds one and the purchase completes.
+43. **Hub → Returns / Redirect:**
+    - The card reads **"Sold to Kavita Patel"**: new order on tomorrow's route, **+₹10 hub bonus**. The **Hub bonus** card reads ₹10.
     - **Label**: the new invoice label ("REDIRECT RESALE · NEW INVOICE").
-41. **Seller & Transit → Redirect sales tab:** "sold on your listing to Kavita Patel".
-
-## Part 9 · RTO → Redirect → back to the seller · ~1 min · R1.8
-42. **Hub → Returns / Redirect → Failed deliveries:**
-    - Ramesh Chandra shows **3/3** dots → **Mark RTO** (only enabled after 3 failures). **Re-attempt tomorrow** is the other option.
-43. His parcel appears in the Redirect Loop, labelled **RTO · original packaging** → **Submit QC** → **Demand Score: High** → on the shelf.
-    - Kavita now shows **"Nudged this week"**: one ping per shopper per week. Rekha is skipped for her recent refusal.
-44. Optional: **Nudge top 5** for the others. Then: "3 days later, nobody bought it" → **Not sold in 3 days → return to seller** → "Returning to the seller · Not sold in 3 days".
+44. **Seller & Transit → Redirect sales tab:** "RTO parcel · sold on your listing to Kavita Patel".
+    - Say: "If nobody had bought it in 3 days, **Not sold in 3 days → return to seller** sends it back."
 
 ## Part 10 · Dispatch layer: child lock and confirmation call (Rekha) · ~2.5 min · P2, P1
 45. **Rekha → Account → Child PIN Lock** toggle → choose a PIN and confirm it.
@@ -170,11 +167,8 @@ One continuous story that covers every feature in the checklist. Press **Reset d
     - Checkout says "Standard delivery via partner", and **Valmo only** for slots and open-box.
     - **Transit:** Destination **3PL partner** → Seller ships → In transit → Reached hub.
     - **Order page:** "With our delivery partner (3PL)" with only **Yes, I'll be home**.
-60. **Hub → Risk tab:** the rescue engine's next-best action per parcel.
-61. **Network Ops:** PeakPromise 21-day demand vs capacity forecast.
-62. **Rekha → Account → Language → हिंदी:** messages switch to Hindi [X5]. Switch back.
-63. **Activity Log:** every event from the video, with who, what and when, and the feature ID.
-64. **Launcher → Reset demo:** "back to a clean start, ready for the next recording".
+60. **Rekha → Account → Language → हिंदी:** messages switch to Hindi [X5]. Switch back.
+61. **Launcher → Reset demo:** "back to a clean start, ready for the next recording".
 
 ---
 
@@ -186,6 +180,6 @@ One continuous story that covers every feature in the checklist. Press **Reset d
 | Doorstep layer | 7 | pin, DIGIPIN, rider screen, open-box |
 | Redirect Loop | 8–9 | refusal, QC, demand, nudge, sale, RTO |
 | Dispatch layer | 10–11 | child lock, confirmation call, automated call, held, dispute |
-| Extras | 12 | 3PL, risk, ops, Hindi, log |
+| Extras | 12 | 3PL, Hindi, reset |
 
 For the Redirect clip on its own, start with Part 7 steps 26–29 to get a parcel to Rekha's door.

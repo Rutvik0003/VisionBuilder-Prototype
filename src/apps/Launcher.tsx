@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Activity, Bike, Building2, LineChart, RotateCcw, Tag, Truck, UserPlus, UserRound } from 'lucide-react';
+import { Bike, Building2, RotateCcw, Tag, Truck, UserPlus, UserRound } from 'lucide-react';
 import { useStore } from '../store';
 import type { AccountId } from '../types';
 import { Wordmark } from '../components/Wordmark';
@@ -55,8 +55,6 @@ export function Launcher() {
           <Tile onClick={() => setRiderOpen(!riderOpen)} icon={<Bike size={22} />} title="Rider" sub="Run the route stop by stop" />
           {riderOpen && <Picker items={riders.map((r) => ({ to: `/rider/${r.id}`, label: r.name, sub: hubs.find((h) => h.id === r.hubId)!.name }))} />}
         </div>
-        <Tile onClick={() => nav('/ops')} icon={<LineChart size={22} />} title="Network Ops" sub="PeakPromise festive forecast" />
-        <Tile onClick={() => nav('/log')} icon={<Activity size={22} />} title="Activity Log" sub="Every feature event, with feature ID" />
       </Section>
 
       <Section title="How an order moves">

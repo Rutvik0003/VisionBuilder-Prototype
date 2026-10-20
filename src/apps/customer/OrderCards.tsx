@@ -180,7 +180,6 @@ export function DelayCard({ order, onPick, onCancel }: { order: Order; onPick: (
   const showToast = useUi((s) => s.showToast);
   if (!order.delay) return null;
   const { oldDate, newDate } = order.delay;
-  const missesNeedBy = !!order.needBy && order.needBy < newDate;
   const freeCancel = canCancelFree(order); // T4.4: only before the seller ships
   return (
     <section className="mx-3 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-amber-300">
@@ -193,17 +192,14 @@ export function DelayCard({ order, onPick, onCancel }: { order: Order; onPick: (
         <FeatureTag id="C1-F5" />
       </div>
       <div className="space-y-2 p-3">
-        {missesNeedBy && (
-          <div className="rounded-lg bg-red-50 p-2.5 text-[13px] font-medium text-danger">{t(freeCancel ? 'delayNeedBy' : 'delayNeedByNoCancel', { needBy: fmtDate(order.needBy!) })}</div>
-        )}
-        <button className={missesNeedBy && freeCancel ? 'btn-outline w-full !py-2.5' : 'btn-primary w-full !py-2.5'}
+        <button className="btn-primary w-full !py-2.5"
           onClick={() => { acceptDelay(order.id); showToast(t('hcConfirmed', { when: fmtDate(newDate) })); }}>
           {t('delayOk', { day: dayjs(newDate).format('ddd') })}
         </button>
         <div className={`grid gap-2 ${freeCancel ? 'grid-cols-2' : 'grid-cols-1'}`}>
           <button className="btn-outline !py-2" onClick={onPick}>{t('delayPick')}</button>
           {freeCancel && (
-            <button className={missesNeedBy ? 'btn bg-danger !py-2 text-white' : 'btn border border-danger !py-2 text-danger'} onClick={onCancel}>
+            <button className="btn border border-danger !py-2 text-danger" onClick={onCancel}>
               {t('delayCancel')}
             </button>
           )}

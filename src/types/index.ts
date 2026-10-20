@@ -136,7 +136,6 @@ export interface Order {
   promisedDate: string;
   slot: { date: string; window: SlotLabel };
   deliverOnOrAfter?: string; // COD cash day (C1-F1)
-  needBy?: string; // occasion date (C1-F1/F5)
   openBox: boolean; // C2-F3, fixed at checkout
   status: OrderStatus;
   homeCheck: HomeCheck;
@@ -152,6 +151,9 @@ export interface Order {
   rto?: { at: string; reason: string; redirect?: Redirect }; // returned to origin (R1: may be resold nearby first)
   replacementFor?: string; // this order replaces one refused at the door (C2-F3)
   redirectOf?: string; // R1: this order buys a parcel refused nearby
+  returnedPart?: string; // open-box: some items were returned at the door → this is the returned part's order id
+  returnedFrom?: string; // this order holds items returned at the door from that (delivered) order
+  groupId?: string; // one checkout split into one order per seller: confirmed together, one OTP, delivered together
   ivr?: 'ringing' | 'confirmed' | 'cancelled' | 'missed'; // order-confirmation IVR call after placing
   delay?: { oldDate: string; newDate: string; source: 'transit' | 'peak'; cause?: 'missed_dispatch' | 'transit'; prevStatus?: OrderStatus };
   confirm?: OrderConfirm; // P1 IVR order confirmation (risk-flagged COD orders)
@@ -189,7 +191,7 @@ export interface Refusal {
   damaged: boolean;
   itemPhotoAt: string;
   sealId: string; // TB-XXXXXX tamper bag
-  redirectEligible: boolean; // Changed mind + no damage → can go to the next buyer instead of back to the seller
+  redirectEligible: boolean; // always false: a parcel opened at the door can't be checked or resold, it goes back to the seller
   disposition?: 'return_to_seller' | 'redirect';
   customerChoice?: 'replacement' | 'closed'; // what the customer chose after refusing
   redirect?: Redirect; // R1 Redirect Loop
@@ -199,7 +201,7 @@ export interface Refusal {
 /** R1 Redirect Loop: a refused, resealed parcel resold to a nearby shopper instead of travelling back to the seller. */
 export interface Redirect {
   state: 'qc' | 'shelf' | 'sold' | 'returned';
-  qc?: { rightItem: boolean; undamaged: boolean; sealIntact: boolean; passed: boolean };
+  qc?: { sealIntact: boolean; labelMatches: boolean; boxUndamaged: boolean; passed: boolean }; // checked from outside: the parcel is never opened
   demand?: { score: 'High' | 'Medium' | 'Low'; inputs: { cartsWishlists: number; searches7d: number; sales30to90d: number; season: string } };
   holdDays?: number; // learned per category (0 = return at once)
   holdUntil?: string;
@@ -254,6 +256,7 @@ export interface Message {
   text: string;
   buttons: { label: string; action: string }[];
   link?: { label: string; href: string };
+  sharedTo?: string[]; // masked numbers this pin link was also sent to (C2-F1)
   answered?: string;
   read: boolean;
   at: string;
@@ -267,15 +270,6 @@ export interface EventLog {
   actor: Actor;
   orderId?: string;
   payload: Record<string, unknown>;
-}
-
-export interface ForecastDay {
-  hubId: string;
-  date: string;
-  demandP50: number;
-  demandP90: number;
-  capacity: number;
-  bottleneck: number;
 }
 
 export interface CartItem {
@@ -295,7 +289,6 @@ export interface CheckoutDraft {
   payment?: Payment;
   slot?: { date: string; window: SlotLabel }; // C1-F1
   holdId?: string; // active 10-minute slot hold
-  needBy?: string; // "Need it by a date?"
   deliverOnOrAfter?: string; // COD cash day
   openBox?: boolean; // customer opted in to open-box delivery (C2-F3)
 }

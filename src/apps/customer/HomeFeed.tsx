@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { EyeOff, PackageOpen, Search, ShieldCheck, Truck, Wallet, Zap } from 'lucide-react';
+import { PackageOpen, Search, ShieldCheck, Truck, Wallet, Zap } from 'lucide-react';
 import { useUi } from '../../store/ui';
 import { buyRedirect, readyNearYou } from '../../services/redirect';
 import { useCurrentCustomer, useDeliverTo, useStore } from '../../store';
@@ -71,7 +71,6 @@ export function HomeFeed() {
       (cat === 'all' || p.category === cat) &&
       (!query || p.title.toLowerCase().includes(query) || p.category.includes(query)));
   }, [products, q, cat, hidden]);
-  const hiddenCount = products.filter((p) => hidden.has(p.clusterId)).length;
 
   return (
     <Screen
@@ -125,11 +124,6 @@ export function HomeFeed() {
         <h2 className="text-[15px] font-semibold">{q ? `Results for “${q}”` : 'Products for You'}</h2>
         <span className="text-[11px] text-ink-muted">{visible.length} items</span>
       </div>
-      {hiddenCount > 0 && (
-        <div className="mx-3 mb-2 flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-[11px] text-ink-muted">
-          <EyeOff size={13} /> Hiding {hiddenCount} listing{hiddenCount > 1 ? 's' : ''} of items you’ve already ordered <FeatureTag id="C3-F1" />
-        </div>
-      )}
       {visible.length === 0 ? (
         <div className="px-6 py-12 text-center text-sm text-ink-muted">No products match. Try another search.</div>
       ) : (
@@ -165,7 +159,7 @@ function ReadyNearYou({ customerId, hubId }: { customerId: string; hubId?: strin
               <div className="p-2">
                 <div className="truncate text-xs">{p.title}{o.items[0].size ? ` · ${o.items[0].size}` : ''}</div>
                 <div className="text-sm font-bold">{rupees(p.price)}</div>
-                <div className="flex items-center gap-1 text-[10px] text-success"><ShieldCheck size={11} /> Sealed · quality-checked</div>
+                <div className="flex items-center gap-1 text-[10px] text-success"><ShieldCheck size={11} /> Original sealed pack</div>
               </div>
             </button>
           );
@@ -182,7 +176,7 @@ function ReadyNearYou({ customerId, hubId }: { customerId: string; hubId?: strin
                 <div className="mt-1 font-bold">{rupees(selProduct.price)} · pay by UPI</div>
               </div>
             </div>
-            <div className="rounded-lg bg-emerald-50 p-2.5 text-xs text-success">Sealed and quality-checked at your local hub. Delivered tomorrow. Only one available: first to pay gets it.</div>
+            <div className="rounded-lg bg-emerald-50 p-2.5 text-xs text-success">Still in its original sealed pack, checked at your local hub. Delivered tomorrow. Only one available: first to pay gets it.</div>
             <button className="btn-accent w-full !py-3" onClick={() => {
               const fresh = buyRedirect(sel.id, customerId);
               setBuying(null);

@@ -9,6 +9,7 @@ import { placeOrder, setOrderStatus, updateOrder } from './orders';
 import { markDelivered, refreshArriving } from './delivery';
 import { afterOrderPlaced } from './ivr';
 import { startRedirect } from './redirect';
+import { itemsLabel } from './catalog';
 
 export const INSPECTION_SECONDS = 120; // 2:00 countdown
 export const HARD_STOP_SECONDS = 300; // 5:00 hard stop
@@ -16,6 +17,7 @@ export const CHECKLIST = ['Correct item', 'Colour / design', 'Size label', 'Quan
 export const REFUSAL_REASONS = ['Wrong item', 'Colour/design different', 'Wrong size label', 'Damaged', 'Changed mind'] as const;
 export const RTO_AFTER_ATTEMPTS = 3;
 
+const orderIdGen = customAlphabet('0123456789', 9);
 const sealCode = customAlphabet('0123456789ABCDEFGHJKLMNPQRSTUVWXYZ', 6);
 const get = () => useStore.getState();
 const findOrder = (id: string) => get().orders.find((o) => o.id === id)!;
@@ -61,16 +63,17 @@ export function acceptAfterInspection(orderId: string, note?: string, otpVerifie
 }
 
 /** Refuse → reason → item photo → reseal in a tamper bag. Always produces a seal ID and a reason. */
-export function refuseAfterInspection(orderId: string, reason: string, damaged: boolean, enteredSealId?: string) {
+export function refuseAfterInspection(orderId: string, reason: string, damaged: boolean, enteredSealId?: string, keptFrom?: Order) {
   const s = get();
   const o = findOrder(orderId);
   const sealId = (enteredSealId?.trim().toUpperCase()) || `TB-${sealCode()}`;
-  const redirectEligible = reason === 'Changed mind' && !damaged;
+  // Opened at the door and resealed in a tamper bag: the hub can't inspect it, so it always goes back to the seller.
+  const redirectEligible = false;
   const at = nowIso();
   setOrderStatus(orderId, 'REFUSED_AFTER_INSPECTION', `Refused after inspection · ${reason}`, {
     sealId,
     inspection: { ...inspectionOf(o), outcome: 'refused' },
-    refusal: { at, reason, damaged, itemPhotoAt: at, sealId, redirectEligible },
+    refusal: { at, reason, damaged, itemPhotoAt: at, sealId, redirectEligible, disposition: 'return_to_seller' },
     visit: { arrived: true, callsMade: 0, doorMessageSent: false, ...o.visit, outcome: 'refused' },
     attempts: [...o.attempts, {
       at, riderId: o.route?.riderId ?? '', arrived: true, callsMade: o.visit?.callsMade ?? 0,
@@ -78,7 +81,10 @@ export function refuseAfterInspection(orderId: string, reason: string, damaged: 
     }],
   });
   s.sendMessage({
-    customerId: o.customerId, orderId, channel: 'whatsapp', featureId: 'C2-F3', text: t('refusedPush', s.lang, { reason }),
+    customerId: o.customerId, orderId, channel: 'whatsapp', featureId: 'C2-F3',
+    text: keptFrom
+      ? t('refusedPartPush', s.lang, { reason, kept: itemsLabel(keptFrom, s.products), returned: itemsLabel(o, s.products) })
+      : t('refusedPush', s.lang, { reason }),
     buttons: [
       { label: t(reason === 'Changed mind' ? 'orderAgain' : 'getCorrectItem', s.lang), action: `replace:${orderId}` },
       { label: t('closeOrder', s.lang), action: `close_refused:${orderId}` },
@@ -86,9 +92,40 @@ export function refuseAfterInspection(orderId: string, reason: string, damaged: 
   });
   s.log('C2-F3', 'inspection_refused', 'customer', { reason, damaged, seconds: secondsUsed(o) }, orderId);
   s.log('C2-F3', 'reseal_done', 'rider', { sealId, redirectEligible }, orderId);
-  startRedirect(orderId); // R1: hub quality check → redirect shelf
+  s.log('C2-F3', 'returning_to_seller', 'system', { reason: 'Opened at the door: sealed in a tamper bag, not resold' }, orderId);
   if (o.route) refreshArriving(o.route.riderId);
   return { sealId, redirectEligible };
+}
+
+/**
+ * One open-box parcel with several items: the customer keeps some and returns the rest.
+ * The returned items move to their own order (same seller, same door) that is refused and resealed in a tamper bag
+ * → back to the seller, with Order again / Close for the customer. The kept items are delivered and paid for.
+ */
+export function refuseSomeItems(orderId: string, returnIdx: number[], reason: string, damaged: boolean, enteredSealId: string, otpVerified: boolean) {
+  const s = get();
+  const o = findOrder(orderId);
+  const back = new Set(returnIdx);
+  if (back.size === 0) return null;
+  if (back.size >= o.items.length) return { ...refuseAfterInspection(orderId, reason, damaged, enteredSealId), childId: orderId };
+  const keep = o.items.filter((_, i) => !back.has(i));
+  const returned = o.items.filter((_, i) => back.has(i));
+  const sum = (items: Order['items']) => items.reduce((a, it) => a + it.price * it.qty, 0);
+  const at = nowIso();
+  const childId = orderIdGen();
+  const child: Order = {
+    ...o, id: childId, items: returned, total: sum(returned), returnedFrom: o.id, groupId: undefined, attempts: [],
+    timeline: [{ at, status: o.status, note: `Returned at the door from order #${o.id}` }],
+  };
+  s.patch((st) => ({ orders: [child, ...st.orders] }));
+  s.log('C2-F3', 'items_returned_at_door', 'customer', { returned: returned.length, kept: keep.length, reason }, orderId);
+  const result = refuseAfterInspection(childId, reason, damaged, enteredSealId, { ...o, items: keep });
+  // the rest of the parcel is accepted: the customer pays only for what they keep
+  updateOrder(orderId, { items: keep, total: sum(keep), returnedPart: childId, sealId: undefined });
+  patchInspection(orderId, { outcome: 'accepted' });
+  s.log('C2-F3', 'inspection_accepted', 'customer', { seconds: secondsUsed(o), partial: true, kept: keep.length }, orderId);
+  markDelivered(orderId, undefined, otpVerified);
+  return { ...result, childId };
 }
 
 /** Abort for safety: the parcel stays sealed with the rider; recorded as an attempt the customer can reschedule. */
@@ -114,14 +151,6 @@ export function abortOpenBox(orderId: string) {
 }
 
 // ---------------------------------------------------------------- hub: refusals & RTO
-
-/** Refused parcel: back to the seller, or (Changed mind, undamaged) redirected to the next buyer nearby. */
-export function setDisposition(orderId: string, disposition: 'return_to_seller' | 'redirect') {
-  const o = findOrder(orderId);
-  if (!o.refusal || (disposition === 'redirect' && !o.refusal.redirectEligible)) return;
-  updateOrder(orderId, { refusal: { ...o.refusal, disposition } });
-  get().log('C2-F3', disposition === 'redirect' ? 'redirect_loop_queued' : 'returned_to_seller', 'hub', { sealId: o.refusal.sealId }, orderId);
-}
 
 export const failedAttempts = (o: Order) => o.attempts.filter((a) => a.result === 'failed').length;
 
@@ -162,7 +191,7 @@ export async function orderReplacement(orderId: string, size?: string): Promise<
   if (!o.refusal || o.refusal.customerChoice) return null;
   const address = get().addresses.find((a) => a.id === o.addressId)!;
   const items = o.items.map((it, i) => ({ productId: it.productId, qty: it.qty, size: i === 0 && size ? size : it.size }));
-  const fresh = await placeOrder({ customerId: o.customerId, items, address, payment: 'COD', fromCart: false, openBox: o.openBox });
+  const [fresh] = await placeOrder({ customerId: o.customerId, items, address, payment: 'COD', fromCart: false, openBox: o.openBox }); // same item, same seller → one order
   updateOrder(fresh.id, { replacementFor: o.id, openBox: fresh.openBox || o.openBox });
   updateOrder(orderId, { refusal: { ...o.refusal, customerChoice: 'replacement', replacementOrderId: fresh.id } });
   answerRefusal(orderId, t('getCorrectItem', get().lang));

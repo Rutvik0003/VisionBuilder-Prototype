@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { asCustomer, hubPublishRunFor, latestOrderId, orderById, resetDemo, riderWorkUntil, shooter, store, watchConsole } from './helpers';
 
-// D. Redirect Loop — a parcel refused at the door is resold nearby (Existing User refuses; a nearby shopper buys)
+// D. Open-box refusal → back to the seller; RTO parcel (never opened) → Redirect Loop → resold nearby or returned
 test('D · Redirect loop', async ({ page }) => {
   const noErrors = watchConsole(page);
   const shot = shooter(page, 'D-redirect');
@@ -53,26 +53,34 @@ test('D · Redirect loop', async ({ page }) => {
   await expect(page.getByText(sealId)).toBeVisible();
   await shot('1b-resealed');
 
-  // 2. Hub: quality check passes → Demand Score "High" → redirect shelf
+  // 2. Hub: an opened parcel can't be checked or resold → straight back to the seller (no Redirect Loop)
   await page.goto('/hub/HUB_HARDOI?view=returns');
-  await expect(page.getByText(`Seal ${sealId}`)).toBeVisible();
-  await shot('2-hub-quality-check');
-  await page.getByRole('button', { name: 'Submit QC' }).click();
-  await expect(page.getByText('Demand Score: High')).toBeVisible();
-  await expect(page.getByText(/On the redirect shelf until/)).toBeVisible();
-  await shot('2b-demand-high-on-shelf');
+  const refusedRow = page.locator('div.flex-wrap', { hasText: `Tamper bag ${sealId}` });
+  await expect(refusedRow.getByText('Returning to seller')).toBeVisible();
+  expect((await orderById(page, id)).refusal.redirect).toBeUndefined();
+  await shot('2-refusal-back-to-seller');
 
-  // 3. Top 5 nearby cart / wishlist shoppers nudged → one buys
-  await page.getByRole('button', { name: 'Nudge top 5' }).click();
-  await expect(page.getByRole('button', { name: /^Simulate: .* pays first$/ }).first()).toBeVisible();
-  await shot('3-top-5-nudged');
+  // 3. RTO parcel (Ramesh Chandra, 3 failed attempts, never opened) → packaging check from outside → Demand High → shelf
+  const failedRow = page.locator('div.flex-wrap', { hasText: 'Ramesh Chandra' }).filter({ has: page.getByRole('button', { name: 'Mark RTO' }) });
+  await failedRow.getByRole('button', { name: 'Mark RTO' }).click();
+  const rtoCard = page.locator('div.rounded-lg.border', { hasText: 'RTO · original packaging' });
+  await expect(rtoCard.getByText('Packaging check at the hub · parcel stays sealed')).toBeVisible();
+  await expect(rtoCard.getByText('Seller seal intact?')).toBeVisible();
+  await shot('3-rto-packaging-check');
+  await rtoCard.getByRole('button', { name: 'Submit check' }).click();
+  await expect(rtoCard.getByText('Demand Score: High')).toBeVisible();
+  await expect(rtoCard.getByText(/On the redirect shelf until/)).toBeVisible();
+  await shot('3b-demand-high-on-shelf');
+  const rtoId = (await store(page)).orders.find((o: { status: string; customerId: string }) => o.status === 'RTO' && o.customerId === 'bg_713').id;
 
-  // The New User (no address yet) is a nearby demo shopper → gets the ping → Buy now → adds address → bought
-  await expect(page.getByText('Demo account · buys from Messages on their phone')).toBeVisible();
+  // 4. Top 5 nearby cart / wishlist shoppers nudged; the New User (no address yet) gets the ping and buys
+  await rtoCard.getByRole('button', { name: 'Nudge top 5' }).click();
+  await expect(rtoCard.getByText('Demo account · buys from Messages on their phone')).toBeVisible();
+  await shot('4-top-5-nudged');
   await asCustomer(page, 'New User');
   await page.goto('/customer/inbox');
-  await expect(page.getByText(/Sealed, quality-checked, ships from near you/).first()).toBeVisible();
-  await shot('3b-new-user-demand-ping');
+  await expect(page.getByText(/Still in its original sealed pack/).first()).toBeVisible();
+  await shot('4b-new-user-demand-ping');
   await page.getByRole('button', { name: 'Buy now' }).first().click();
   await expect(page).toHaveURL(/addresses\/new\?return=redirect:/);
   await page.getByLabel('Pincode').fill('241001');
@@ -82,38 +90,32 @@ test('D · Redirect loop', async ({ page }) => {
   await page.getByLabel('Area, street, village').fill('Railway Ganj');
   await page.getByRole('button', { name: 'Save address' }).click();
   await expect(page).toHaveURL(/\/customer\/orders\//);
-  await shot('3c-bought-delivered-tomorrow');
-  await page.goto('/hub/HUB_HARDOI?view=returns');
+  await shot('4c-bought-delivered-tomorrow');
 
-  // 4. New invoice + label → next day's route → hub bonus +₹10
-  await expect(page.getByText(/Sold to/)).toBeVisible();
-  await expect(page.locator('div.bg-emerald-50', { hasText: 'Sold to' }).getByText('Kavita Patel')).toBeVisible();
-  const s = await store(page);
-  const refused = s.orders.find((o: { id: string }) => o.id === id);
-  const fresh = await orderById(page, refused.refusal.redirect.newOrderId);
+  // 5. New invoice + label → next day's route → hub bonus +₹10
+  await page.goto('/hub/HUB_HARDOI?view=returns');
+  const sold = page.locator('div.bg-emerald-50', { hasText: 'Sold to' });
+  await expect(sold.getByText('Kavita Patel')).toBeVisible();
+  const st = await store(page);
+  const fresh = await orderById(page, st.orders.find((o: { id: string }) => o.id === rtoId).rto.redirect.newOrderId);
   expect(fresh.status).toBe('ACCEPTED');
   expect(fresh.slot.date > new Date().toISOString().slice(0, 10)).toBe(true);
-  expect(s.events.some((e: { name: string }) => e.name === 'invoice_printed')).toBe(true);
-  await expect(page.getByText('Hub bonus (₹10 per redirect)')).toBeVisible();
+  expect(st.events.some((e: { name: string }) => e.name === 'invoice_printed')).toBe(true);
   await expect(page.locator('div.card', { hasText: 'Hub bonus' }).getByText('10', { exact: true })).toBeVisible();
-  await shot('4-sold-bonus');
-  await page.locator('div.bg-emerald-50', { hasText: 'Sold to' }).getByRole('button', { name: 'Label' }).click();
+  await shot('5-sold-bonus');
+  await sold.getByRole('button', { name: 'Label' }).click();
   await expect(page.getByText('VALMO')).toBeVisible();
-  await shot('4b-new-label');
-  await page.keyboard.press('Escape');
-  await page.goto('/hub/HUB_HARDOI?view=returns');
+  await shot('5b-new-label');
 
-  // 5. RTO parcel (Ramesh Chandra, 3 failed attempts) → Redirect Loop → not sold in 3 days → back to the seller
-  const failedRow = page.locator('div.flex-wrap', { hasText: 'Ramesh Chandra' }).filter({ has: page.getByRole('button', { name: 'Mark RTO' }) });
-  await failedRow.getByRole('button', { name: 'Mark RTO' }).click();
-  const rtoCard = page.locator('div.rounded-lg.border', { hasText: 'RTO · original packaging' });
-  await expect(rtoCard).toBeVisible();
-  await rtoCard.getByRole('button', { name: 'Submit QC' }).click();
-  await expect(rtoCard.getByText('Demand Score: High')).toBeVisible();
-  await expect(rtoCard.getByText(/On the redirect shelf until/)).toBeVisible();
-  await shot('5-rto-on-redirect-shelf');
-  await rtoCard.getByRole('button', { name: /Not sold in 3 days → return to seller/ }).click();
-  await expect(rtoCard.getByText(/Returning to the seller · Not sold in 3 days/)).toBeVisible();
-  await shot('5b-rto-returned-after-3-days');
+  // 6. Fresh start: the same RTO parcel is not sold within 3 days → back to the seller
+  await resetDemo(page);
+  await page.goto('/hub/HUB_HARDOI?view=returns');
+  await page.locator('div.flex-wrap', { hasText: 'Ramesh Chandra' }).filter({ has: page.getByRole('button', { name: 'Mark RTO' }) })
+    .getByRole('button', { name: 'Mark RTO' }).click();
+  const card2 = page.locator('div.rounded-lg.border', { hasText: 'RTO · original packaging' });
+  await card2.getByRole('button', { name: 'Submit check' }).click();
+  await card2.getByRole('button', { name: /Not sold in 3 days → return to seller/ }).click();
+  await expect(card2.getByText(/Returning to the seller · Not sold in 3 days/)).toBeVisible();
+  await shot('6-rto-returned-after-3-days');
   noErrors();
 });

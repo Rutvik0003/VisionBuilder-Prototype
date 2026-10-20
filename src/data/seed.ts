@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import type { Address, Customer, ForecastDay, Hub, Order, Rider, SlotInventory, SlotLabel } from '../types';
+import type { Address, Customer, Hub, Order, Rider, SlotInventory, SlotLabel } from '../types';
 import { encodeDigipin } from '../services/digipin';
 import { PRODUCTS } from './products';
 import { scoreOrder } from '../services/rescue';
@@ -142,33 +142,6 @@ export function makeSlotInventory(start = dayjs().format('YYYY-MM-DD'), days = 5
     }
   }
   return rows;
-}
-
-// 21-day forecast per hub. Days 10–16 festive at 1.6–2.2×.
-export const FESTIVE_CURVE = [1.6, 1.8, 2.0, 2.2, 2.1, 1.9, 1.7];
-
-export function festiveMultiplier(dayIndex: number, festiveMode: boolean): number {
-  if (!festiveMode) return 1;
-  return dayIndex >= 9 && dayIndex <= 15 ? FESTIVE_CURVE[dayIndex - 9] : 1;
-}
-
-export function makeForecast(start = dayjs().format('YYYY-MM-DD'), festiveMode = false): ForecastDay[] {
-  const out: ForecastDay[] = [];
-  for (const hub of HUBS) {
-    const capacity = hubWindowCapacity(hub.id) * SLOT_WINDOWS.length;
-    const base = capacity * 0.68; // see ASSUMPTIONS.md: keeps normal days green
-    for (let d = 0; d < 21; d++) {
-      const wobble = 1 + (((d * 13) % 9) - 4) / 100;
-      const p50 = Math.round(base * wobble * festiveMultiplier(d, festiveMode));
-      const p90 = Math.round(p50 * 1.25);
-      const bottleneck = p90 > capacity * 0.9 ? Math.max(0, Math.min(1, (p90 - capacity) / capacity + 0.3)) : 0.1;
-      out.push({
-        hubId: hub.id, date: dayjs(start).add(d, 'day').format('YYYY-MM-DD'),
-        demandP50: p50, demandP90: p90, capacity, bottleneck: Math.round(bottleneck * 100) / 100,
-      });
-    }
-  }
-  return out;
 }
 
 /** 4 past delivered orders for the existing user (one is the lowest listing of the bedsheet cluster). */

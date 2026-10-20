@@ -23,7 +23,7 @@ _Final status, 2026-10-04: every row is ✅. Rows marked "(team decision)" were 
 | F0.2 | Shared store across apps | ✅ | `src/store/index.ts` (Zustand, persisted) | — |
 | F0.3 | Seed data | ✅ (team decision) | `src/data/seed.ts`, `products.ts` | Seeded: Rekha (Hardoi 241001); riders Suresh, Imran, Deepak; Hardoi LMDC; "Floral Rayon Kurti" ₹499. Ramcharan is played by the New User |
 | F0.4 | "Reset demo" | ✅ | Launcher → Settings | — |
-| F0.5 | Activity Log `/log` | ✅ | `src/apps/log/ActivityLog.tsx` | — |
+| F0.5 | Activity Log `/log` | ✅ (team decision) | `store.events` (every event is still recorded) | The `/log` screen was removed at the team’s request; events are still logged in the store |
 | F0.6 | Advance-time control | ✅ (team decision) | Simulator buttons in Seller & Transit, Hub, Rider | Each timed step is a button: "No tap in 10 min → Meesho calls", "3 hours later → second call", "Hold window ended → return", run Lock & publish, etc. |
 
 ## 1. Timing layer
@@ -35,7 +35,7 @@ _Final status, 2026-10-04: every row is ✅. Rows marked "(team decision)" were 
 | T1.4 | Any time (fastest) + 3 windows | ✅ | SlotPicker | — |
 | T1.5 | Capacity-based, Full greyed | ✅ | `services/slots.ts` | — |
 | T1.6 | Hold banner + release | ✅ | SlotPicker `HoldTimer` | — |
-| T1.7 | COD "Deliver on or after" | ✅ | Checkout payment step (`cashDayTitle`) | — |
+| T1.7 | COD "Deliver on or after" | ✅ (team decision) | Checkout payment step (`cashDayTitle`) | Reworded in plain language at the team’s request: "Paying cash? When will you have the money? We will come on that day or later (for example, your salary day)." |
 | T1.8 | Slot saved and shown everywhere | ✅ | OrderDetails, hub, rider | — |
 | T2.1 | WhatsApp ping on hub scan-in | ✅ | Hub → Inbound "Scan in" → `flow.hubAccept` | — |
 | T2.2 | Ping wording | ✅ | strings hcMessage/hcCash | — |
@@ -97,8 +97,8 @@ _Final status, 2026-10-04: every row is ✅. Rows marked "(team decision)" were 
 ## 4. Redirect loop
 | ID | Item | Status | Where in code | What is missing |
 |---|---|---|---|---|
-| R1.1 | Refusal reason + seal ID | ✅ | OpenBoxFlow → `openbox.refuseAfterInspection` | — |
-| R1.2 | QC → redirect shelf / return | ✅ | Hub → Returns / Redirect QC form → `redirect.runQualityCheck` | — |
+| R1.1 | Refusal reason + seal ID | ✅ (team decision) | OpenBoxFlow → `openbox.refuseAfterInspection` | Open-box refusals are opened at the door, so they go back to the seller; only RTO parcels (never opened) enter the Redirect Loop |
+| R1.2 | QC → redirect shelf / return | ✅ (team decision) | Hub → Returns / Redirect packaging check → `redirect.runQualityCheck` | The parcel stays sealed: the check is from the outside (seller seal, label vs order, box condition) |
 | R1.3 | Local Demand Score + inputs | ✅ | `redirect.demandFor`, RedirectCard | — |
 | R1.4 | Cart & wishlist match, top 5 / next 5 | ✅ | `redirect.nearbyMatches`, "Nudge top 5" / "Nudge next 5" | — |
 | R1.5 | Buyer notification, price ≥ listing | ✅ | `redirect.nudge` (listing price, "Buy now") | — |

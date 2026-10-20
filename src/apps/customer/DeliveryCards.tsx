@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { itemsLabel } from '../../services/catalog';
 import dayjs from 'dayjs';
 import { Bike, Check, Crosshair, MessageSquare, PackageOpen, Phone, PhoneOff, RefreshCw, TriangleAlert, UserX } from 'lucide-react';
 import { pinFromGps } from '../../services/addresses';
@@ -190,7 +191,9 @@ export function AttemptCard({ order, onMissed }: { order: Order; onMissed: () =>
 }
 
 /** Terminal: returned at the door after open-box inspection (C2-F3), or returned to the seller (RTO). */
-export function ReturnedCard({ order, onReplace }: { order: Order; onReplace: () => void }) {
+/** Refused / RTO order. With `partOf`: the returned part of a parcel whose other items were delivered. */
+export function ReturnedCard({ order, onReplace, partOf }: { order: Order; onReplace: () => void; partOf?: Order }) {
+  const products = useStore((s) => s.products);
   const t = useT();
   const showToast = useUi((s) => s.showToast);
   const nav = useNavigate();
@@ -201,8 +204,10 @@ export function ReturnedCard({ order, onReplace }: { order: Order; onReplace: ()
       <div className="flex gap-3 p-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-ink-muted"><UserX size={17} /></span>
         <div className="flex-1">
-          <div className="text-sm font-semibold">{refused ? t('refusedTitle') : t('rtoTitle')}</div>
-          <div className="text-[12px] text-ink-muted">{refused ? t('refusedSub', { reason: r?.reason ?? '' }) : t('rtoSub')}</div>
+          <div className="text-sm font-semibold">{partOf ? t('returnedPartTitle') : refused ? t('refusedTitle') : t('rtoTitle')}</div>
+          <div className="text-[12px] text-ink-muted">
+            {partOf ? `Returned: ${itemsLabel(order, products)} (${r?.reason ?? ''}) · #${order.id}. Nothing to pay for it.` : refused ? t('refusedSub', { reason: r?.reason ?? '' }) : t('rtoSub')}
+          </div>
         </div>
         <FeatureTag id={refused ? 'C2-F3' : 'C2-F4'} />
       </div>

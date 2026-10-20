@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { itemsLabel } from '../../services/catalog';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { useShallow } from 'zustand/react/shallow';
@@ -19,12 +20,11 @@ import { reattemptTomorrow } from '../../services/openbox';
 import { DesktopShell } from '../../components/DesktopShell';
 import { FeatureTag } from '../../components/FeatureTag';
 import { LabelButton } from '../../components/ShippingLabel';
-import { RiskTab } from './RiskTab';
 import { RunPlanner } from './RunPlanner';
 import { RefusalsView } from './RefusalsView';
 import { Empty, HOME_CHIP, HomeChip, RiskDot, Section, nextAction, slotShort } from './bits';
 
-type View = 'inbound' | 'replies' | 'held' | 'routes' | 'live' | 'disputes' | 'returns' | 'risk';
+type View = 'inbound' | 'replies' | 'held' | 'routes' | 'live' | 'disputes' | 'returns';
 
 export function HubPicker() {
   const { hubs, orders } = useStore();
@@ -71,7 +71,6 @@ export function HubConsole() {
     { id: 'live', label: 'Live' },
     { id: 'disputes', label: 'Disputes', n: orders.filter((o) => o.attempts.some((a) => a.dispute === 'open') || isAddressNotFound(o)).length },
     { id: 'returns', label: 'Returns / Redirect', n: orders.filter((o) => ['qc', 'shelf'].includes(redirectOf(o)?.state ?? '') || o.status === 'ATTEMPT_FAILED').length },
-    { id: 'risk', label: 'Risk' },
   ];
 
   return (
@@ -92,7 +91,6 @@ export function HubConsole() {
       {view === 'live' && <LiveView hubId={hub.id} />}
       {view === 'disputes' && <DisputesView orders={orders} onOpen={setDrawer} />}
       {view === 'returns' && <RefusalsView hubId={hub.id} onOpen={setDrawer} />}
-      {view === 'risk' && <section className="card p-4"><RiskTab hub={hub} /></section>}
 
       {drawer && <OrderDrawer orderId={drawer} onClose={() => setDrawer(null)} />}
     </DesktopShell>
@@ -177,6 +175,7 @@ function RepliesView({ hubId, onOpen }: { hubId: string; onOpen: (id: string) =>
 
 function HeldView({ orders, onOpen }: { orders: Order[]; onOpen: (id: string) => void }) {
   const customers = useStore((s) => s.customers);
+  const products = useStore((s) => s.products);
   const rows = orders.filter((o) => o.status === 'HELD').sort((a, b) => a.slot.date.localeCompare(b.slot.date));
   return (
     <Section title="Held parcels" sub="They rejoin automatically when the run for their release date is planned. Held more than 3 days → escalate." right={<FeatureTag id="C1-F2" />}>
@@ -192,7 +191,7 @@ function HeldView({ orders, onOpen }: { orders: Order[]; onOpen: (id: string) =>
                 return (
                   <tr key={o.id} className="hover:bg-gray-50">
                     <td className="px-3 py-2"><button className="font-medium hover:text-brand" onClick={() => onOpen(o.id)}>{customers.find((c) => c.id === o.customerId)?.name}</button>
-                      <div className="font-mono text-[11px] text-ink-muted">#{o.id}</div></td>
+                      <div className="font-mono text-[11px] text-ink-muted">#{o.id}</div><div className="text-[11px] text-ink-muted">{itemsLabel(o, products)}</div></td>
                     <td className="px-3 py-2 text-xs">{o.homeCheck === 'change_requested' ? 'Customer (asked for a new day)' : 'Hub'}</td>
                     <td className="px-3 py-2">{fmtDate(o.slot.date)} · {o.slot.window}</td>
                     <td className="px-3 py-2">
@@ -304,6 +303,7 @@ function LiveView({ hubId }: { hubId: string }) {
 
 function OrderTable({ rows, onOpen, action }: { rows: Order[]; onOpen: (id: string) => void; action?: (o: Order) => React.ReactNode }) {
   const customers = useStore((s) => s.customers);
+  const products = useStore((s) => s.products);
   const addresses = useStore((s) => s.addresses);
   return (
     <div className="divide-y divide-gray-100 rounded-lg border border-gray-100">
@@ -316,7 +316,7 @@ function OrderTable({ rows, onOpen, action }: { rows: Order[]; onOpen: (id: stri
               <span className="block truncate font-medium hover:text-brand">
                 {c.name}{!c.background && <span className="chip ml-1 bg-brand !text-[9px] text-white">Demo</span>}
               </span>
-              <span className="block truncate text-xs text-ink-muted">{a.area}, {a.pincode}</span>
+              <span className="block truncate text-xs text-ink-muted">{itemsLabel(o, products)} · {a.area}, {a.pincode}</span>
             </button>
             <span className="hidden w-44 shrink-0 truncate text-xs text-ink-muted sm:block">{slotShort(o)}</span>
             <span className="w-28 shrink-0"><HomeChip o={o} /></span>
@@ -354,10 +354,9 @@ function OrderDrawer({ orderId, onClose }: { orderId: string; onClose: () => voi
             <Row k="Home check" v={<HomeChip o={o} />} />
             <Row k="Payment" v={o.payment === 'COD' ? `COD ${rupees(o.total)}` : `Prepaid ${rupees(o.total)}`} />
             {o.openBox && <Row k="Open-box" v="Yes" />}
-            {o.needBy && <Row k="Needed by" v={fmtDate(o.needBy)} />}
             {o.deliverOnOrAfter && <Row k="Cash ready from" v={fmtDate(o.deliverOnOrAfter)} />}
             {rider && o.route && <Row k="Rider" v={`${rider.name} · ${o.route.run} run · stop ${o.route.seq}`} />}
-            {o.refusal && <Row k="Refused at door" v={`${o.refusal.reason} · seal ${o.refusal.sealId}${o.refusal.redirectEligible ? ' · Redirect eligible' : ''}`} />}
+            {o.refusal && <Row k="Refused at door" v={`${o.refusal.reason} · tamper bag ${o.refusal.sealId} · back to seller`} />}
             {o.rto && <Row k="RTO" v={o.rto.reason} />}
           </Block>
           <Block title="Address">
@@ -421,6 +420,7 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
 // ================================================================= disputes
 
 function DisputesView({ orders, onOpen }: { orders: Order[]; onOpen: (id: string) => void }) {
+  const products = useStore((s) => s.products);
   const rows = orders.filter((o) => o.attempts.some((a) => a.dispute));
   const notFound = orders.filter(isAddressNotFound);
   const riders = useStore((s) => s.riders);
@@ -438,6 +438,7 @@ function DisputesView({ orders, onOpen }: { orders: Order[]; onOpen: (id: string
                 <div key={o.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 p-3 text-sm">
                   <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(o.id)}>
                     <div className="font-medium">{customers.find((c) => c.id === o.customerId)?.name} <span className="font-mono text-xs text-ink-muted">#{o.id}</span></div>
+                    <div className="truncate text-xs text-ink-muted">{itemsLabel(o, products)}</div>
                     <div className="text-xs text-ink-muted">{rider?.name} · {fmtDateTime(att.at)} · {att.reason}</div>
                   </button>
                   <div className="flex gap-1.5 text-xs">
@@ -468,6 +469,7 @@ function DisputesView({ orders, onOpen }: { orders: Order[]; onOpen: (id: string
                 <div key={o.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 p-3 text-sm">
                   <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(o.id)}>
                     <div className="font-medium">{customers.find((c) => c.id === o.customerId)?.name} <span className="font-mono text-xs text-ink-muted">#{o.id}</span></div>
+                    <div className="truncate text-xs text-ink-muted">{itemsLabel(o, products)}</div>
                     <div className="text-xs text-ink-muted">{riders.find((r) => r.id === att.riderId)?.name} · {fmtDateTime(att.at)} · {a.area}, {a.pincode} · {a.confidence}</div>
                   </button>
                   <div className="flex gap-1.5 text-xs">

@@ -168,9 +168,12 @@ export function planRun(hubId: string, date: string, run: RunId): RoutePlan | nu
     const rider = riders.find((r) => r.id === riderId)!;
     return { capacityOk: lane.ids.length < cap, cashOk: o.payment !== 'COD' || lane.cod + o.total <= rider.cashLimit };
   };
+  const doorOf = (o: Order) => `${o.customerId}|${o.addressId}`;
+  const doorSeen = new Map<string, string>(); // door → rider already carrying a parcel for it
   const assign = (riderId: string, o: Order) => {
     const lane = lanes.get(riderId)!;
     lane.ids.push(o.id);
+    doorSeen.set(doorOf(o), riderId);
     if (o.payment === 'COD') lane.cod += o.total;
   };
 
@@ -191,6 +194,8 @@ export function planRun(hubId: string, date: string, run: RunId): RoutePlan | nu
   const clusterRider = new Map<string, string>();
   for (const o of [...near].sort(priority)) {
     const cell = cluster6(deliveryPoint(addr(o)));
+    const together = doorSeen.get(doorOf(o)); // parcels for the same door ride together
+    if (together && fits(together, o).capacityOk) { assign(together, o); continue; }
     // A rescheduled parcel may still be on a rider's bike: give it back to the same rider if it fits.
     const keeper = o.route && pool.find((r) => r.id === o.route!.riderId);
     if (keeper) {

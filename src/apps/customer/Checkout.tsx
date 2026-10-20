@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import {
-  AlertTriangle, BadgeCheck, Banknote, CalendarDays, CalendarHeart, Check, ChevronDown, CircleCheck, Loader2, MapPin, PackageOpen, Plus,
+  BadgeCheck, Banknote, CalendarDays, Check, CircleCheck, Loader2, MapPin, PackageOpen, Plus,
   Smartphone, Truck, Wallet,
 } from 'lucide-react';
 import { useAddresses, useCurrentCustomer, useDeliverTo, useStore } from '../../store';
@@ -116,7 +116,6 @@ export function Checkout() {
   const t = useT();
   const [placing, setPlacing] = useState(false);
   const [holdExpired, setHoldExpired] = useState(false);
-  const [needByOpen, setNeedByOpen] = useState(false);
   const { guard, gate } = useChildLockGate();
 
   // No saved address (e.g. a new user) → straight to Add Address, which returns here.
@@ -203,12 +202,12 @@ export function Checkout() {
     {
       setPlacing(true);
       try {
-        const order = await placeOrder({
+        const orders = await placeOrder({
           customerId: customer.id, items: draft.items, address: address!, payment: draft.payment!, fromCart: draft.source === 'cart',
-          slot, holdId: draft.holdId, needBy: draft.needBy, deliverOnOrAfter: draft.deliverOnOrAfter, openBox,
+          slot, holdId: draft.holdId, deliverOnOrAfter: draft.deliverOnOrAfter, openBox,
         });
-        afterOrderPlaced(order.id);
-        nav(`/customer/order-placed/${order.id}`, { replace: true });
+        afterOrderPlaced(orders.map((o) => o.id)); // one confirmation for the whole checkout
+        nav(`/customer/order-placed/${orders[0].id}`, { replace: true });
       } catch (e) {
         setPlacing(false);
         if (e instanceof SlotUnavailableError) {
@@ -225,7 +224,6 @@ export function Checkout() {
   };
 
   const slotLine = slot ? `${fmtDate(slot.date)} · ${slot.window === 'Any time' ? 'Any time' : slot.window}` : '';
-  const needByLate = !!draft.needBy && !!slot && slot.date > draft.needBy;
 
   return (
     <Screen
@@ -282,33 +280,6 @@ export function Checkout() {
                 {holdExpired && !hold && <div className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{t('slotExpired')}</div>}
               </section>
 
-              {/* Need it by a date? */}
-              <section className="bg-white px-4 py-3">
-                <button className="flex w-full items-center gap-2 text-left" onClick={() => setNeedByOpen(!needByOpen)}>
-                  <CalendarHeart size={17} className="text-brand" />
-                  <span className="flex-1 text-sm font-semibold">{t('needByToggle')}</span>
-                  {draft.needBy && <span className="chip bg-brand-light text-brand">by {fmtDate(draft.needBy)}</span>}
-                  <ChevronDown size={16} className={`transition ${needByOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {needByOpen && (
-                  <div className="mt-2 space-y-2">
-                    <div className="text-[12px] text-ink-muted">{t('needBySub')}</div>
-                    <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
-                      {Array.from({ length: 7 }, (_, i) => dayjs(promised).add(i - 1, 'day').format('YYYY-MM-DD')).map((d) => (
-                        <button key={d} onClick={() => updateCheckout({ needBy: draft.needBy === d ? undefined : d })}
-                          className={`shrink-0 rounded-full border px-3 py-1 text-[12px] ${draft.needBy === d ? 'border-brand bg-brand-light font-semibold text-brand' : 'border-gray-300'}`}>
-                          {dayjs(d).format('ddd D')}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {needByLate && (
-                  <div className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 p-2.5 text-[12px] text-amber-800">
-                    <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {t('needByWarn', { date: fmtDate(draft.needBy!) })}
-                  </div>
-                )}
-              </section>
             </>
           ) : (
             <section className="mx-3 rounded-xl bg-white p-4">
@@ -383,12 +354,17 @@ export function Checkout() {
                 {pilot && <button className="text-xs font-semibold text-brand" onClick={() => go('delivery')}>Change</button>}
               </div>
               {hold && <div className="mt-1 text-[11px] text-success">Slot held for you</div>}
-              {draft.needBy && <div className="mt-1 text-[12px] text-ink-muted">Needed by {fmtDate(draft.needBy)}</div>}
               {draft.payment === 'COD' && draft.deliverOnOrAfter && <div className="mt-0.5 text-[12px] text-ink-muted">Cash ready from {fmtDate(draft.deliverOnOrAfter)}</div>}
             </section>
             {bestPrice.length > 0 && (
               <section className="flex items-center gap-2 bg-emerald-50 px-4 py-2.5 text-[13px] font-semibold text-success">
                 <BadgeCheck size={16} /> {t('bestPrice')} <FeatureTag id="C3-F1" />
+              </section>
+            )}
+            {new Set(lines.map((l) => l.product.sellerId)).size > 1 && (
+              <section className="flex items-start gap-2 bg-sky-50 px-4 py-2.5 text-[13px] text-sky-900">
+                <Truck size={16} className="mt-0.5 shrink-0" />
+                <span>These items are from {new Set(lines.map((l) => l.product.sellerId)).size} sellers, so they come as {new Set(lines.map((l) => l.product.sellerId)).size} parcels, together on the same day. You confirm them once.</span>
               </section>
             )}
             {openBox && (

@@ -134,19 +134,55 @@ export function removePin(addressId: string) {
 
 // ---------------------------------------------------------------- remote pin link (C2-F1)
 
-export function sendRemotePinLink(addressId: string) {
+/** Indian mobile number → 10 digits (a +91 or 0 prefix is ignored), or null if it isn't valid. */
+export function normalisePhone(raw: string): string | null {
+  let d = raw.replace(/\D/g, '');
+  if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
+  else if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+  return /^[6-9]\d{9}$/.test(d) ? d : null;
+}
+
+/** Numbers are always shown masked (X3). */
+export const maskPhone = (digits: string) => `+91 ${digits.slice(0, 2)}XXX XX${digits.slice(7)}`;
+
+/** The shareable pin link for an address (simulated: it opens this prototype's pin page). */
+export const pinLinkUrl = (addressId: string) => `${window.location.origin}/pin/${addressId}`;
+
+/**
+ * Send the "Pin my location" link to the customer's own WhatsApp.
+ * With a receiver's number (e.g. the person at that address), it is sent to them as well.
+ */
+export function sendRemotePinLink(addressId: string, receiverPhone?: string) {
   const s = get();
   const a = s.addresses.find((x) => x.id === addressId)!;
   const hi = s.lang === 'hi';
+  const receiver = receiverPhone ? normalisePhone(receiverPhone) : null;
+  const masked = receiver ? maskPhone(receiver) : null;
   s.sendMessage({
     customerId: a.customerId, channel: 'whatsapp', featureId: 'C2-F1',
-    text: hi
+    text: (hi
       ? `अपने ${a.label} पते (${a.area}, ${a.pincode}) पर पहुँचकर यह लिंक खोलें और दरवाज़े पर पिन लगाएँ। इससे राइडर आपको आसानी से ढूँढ पाएगा।`
-      : `Open this link when you're at your ${a.label} address (${a.area}, ${a.pincode}) and drop a pin on your door. It helps the rider find you.`,
+      : `Open this link when you're at your ${a.label} address (${a.area}, ${a.pincode}) and drop a pin on your door. It helps the rider find you.`)
+      + (masked ? (hi ? `\n\nयह लिंक ${masked} को भी भेजा गया है।` : `\n\nThis link was also sent to ${masked}.`) : ''),
     buttons: [],
     link: { label: hi ? 'पिन लगाएँ' : 'Pin my location', href: `/pin/${a.id}` },
+    sharedTo: masked ? [masked] : undefined,
   });
-  s.log('C2-F1', 'remote_link_sent', 'customer', {});
+  s.log('C2-F1', 'remote_link_sent', 'customer', { toReceiver: !!masked });
+  if (masked) s.log('C2-F1', 'remote_link_sent_to_receiver', 'system', { to: masked });
+}
+
+/** "Share this link" from Messages: forward the pin link to someone else's WhatsApp (simulated). */
+export function sharePinLink(messageId: string, phone: string): string | null {
+  const s = get();
+  const digits = normalisePhone(phone);
+  if (!digits) return null;
+  const masked = maskPhone(digits);
+  s.patch((st) => ({
+    messages: st.messages.map((m) => (m.id === messageId ? { ...m, sharedTo: [...new Set([...(m.sharedTo ?? []), masked])] } : m)),
+  }));
+  s.log('C2-F1', 'remote_link_forwarded', 'customer', { to: masked });
+  return masked;
 }
 
 export function setRemotePin(addressId: string, point: LatLng) {

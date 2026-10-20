@@ -6,7 +6,7 @@ import type { AddressLabel, LatLng } from '../../types';
 import { useT } from '../../lib/strings';
 import { encodeDigipin } from '../../services/digipin';
 import {
-  type AddressDraft, type PinInput, KNOWN_PINCODES, draftGeo, pinCheck, resolvePincode, saveAddress, sendRemotePinLink,
+  type AddressDraft, type PinInput, KNOWN_PINCODES, draftGeo, pinCheck, resolvePincode, saveAddress, normalisePhone, sendRemotePinLink,
 } from '../../services/addresses';
 import { updateCheckout } from '../../services/cart';
 import { buyRedirect } from '../../services/redirect';
@@ -49,6 +49,7 @@ export function AddressEditor() {
   const [point, setPoint] = useState<LatLng | null>(existing ? (existing.pin ?? existing.learned ?? existing.geoCell) : null);
   const [recenter, setRecenter] = useState(0);
   const [remoteRequested, setRemoteRequested] = useState(false);
+  const [receiver, setReceiver] = useState(''); // optional: also send the pin link to this number
   const [touched, setTouched] = useState(false);
 
   const resolved = resolvePincode(draft.pincode);
@@ -116,13 +117,14 @@ export function AddressEditor() {
     area: !draft.area.trim() && 'Enter area or street',
     pincode: !resolved && 'Enter a valid pincode',
   } as Record<string, string | false>;
-  const valid = !Object.values(errors).some(Boolean);
+  const receiverError = remoteRequested && !pin && receiver.trim() && !normalisePhone(receiver) ? 'Enter a valid 10-digit mobile number' : false;
+  const valid = !Object.values(errors).some(Boolean) && !receiverError;
 
   const save = () => {
     setTouched(true);
     if (!valid || !geo) return;
     const a = saveAddress(customer.id, draft, pin, geo, existing?.id);
-    if (remoteRequested && !pin) sendRemotePinLink(a.id);
+    if (remoteRequested && !pin) sendRemotePinLink(a.id, receiver.trim() || undefined);
     showToast(existing ? 'Address updated' : 'Address saved');
     if (ret === 'checkout') { updateCheckout({ addressId: a.id }); nav('/customer/checkout', { replace: true }); }
     else if (ret.startsWith('product:')) nav(`/customer/product/${ret.slice(8)}`, { replace: true });
@@ -141,7 +143,7 @@ export function AddressEditor() {
   // ------------------------------------------------------------- pin step
   if (step === 'pin') {
     return (
-      <Screen
+      <Screen key="pin"
         header={<PageHeader title={title} sub="Step 1 of 2 · Pin your door" />}
         footer={resolved && point ? (
           <div className="shrink-0 space-y-2 border-t border-gray-200 bg-white p-3">
@@ -210,8 +212,9 @@ export function AddressEditor() {
   const set = (k: keyof AddressDraft) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft({ ...draft, [k]: e.target.value });
   const pinned = pin ?? (existing?.pin && existing.pincode === draft.pincode ? { ...existing.pin } : null);
 
+  // key: a fresh scroll container, so the details step opens at the top (not scrolled like the pin step was)
   return (
-    <Screen
+    <Screen key="details"
       header={<PageHeader title={title} sub={needsPin ? 'Step 2 of 2 · Address details' : undefined}
         onBack={needsPin ? () => setStep('pin') : undefined} />}
       footer={
@@ -238,6 +241,17 @@ export function AddressEditor() {
           <Pencil size={12} /> {pinned || existing?.learned ? 'Adjust pin' : 'Add pin'}
         </button>
       </div>
+      {remoteRequested && !pinned && (
+        <div className="border-t border-gray-100 bg-white px-4 pb-3 pt-2">
+          <Field label="Receiver's phone number (optional)" value={receiver} inputMode="tel" placeholder="e.g. 98765 43210"
+            onChange={(e) => setReceiver(e.target.value)} error={touched && receiverError} />
+          <div className="mt-1 text-[11px] text-ink-muted">
+            {receiver.trim()
+              ? 'We’ll send the pin link to you and to this number.'
+              : 'Leave it empty and the link comes only to you. Add the number of the person at this address to send it to them too.'}
+          </div>
+        </div>
+      )}
 
       <div className="mt-2 space-y-4 bg-white px-4 py-4">
         <div>

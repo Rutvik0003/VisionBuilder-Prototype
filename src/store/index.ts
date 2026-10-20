@@ -3,11 +3,11 @@ import { persist } from 'zustand/middleware';
 import { useShallow } from 'zustand/react/shallow';
 import { nanoid } from 'nanoid';
 import type {
-  AccountId, Actor, Address, CartItem, CheckoutDraft, Customer, EventLog, ForecastDay, Hub, Lang, Message, Order,
+  AccountId, Actor, Address, CartItem, CheckoutDraft, Customer, EventLog, Hub, Lang, Message, Order,
   Product, Rider, RoutePlan, SlotHold, SlotInventory,
 } from '../types';
 import {
-  ADDRESSES, CUSTOMERS, HUBS, PRODUCTS, RIDERS, makeBackground, makeForecast, makePastOrders, makeSlotInventory,
+  ADDRESSES, CUSTOMERS, HUBS, PRODUCTS, RIDERS, makeBackground, makePastOrders, makeSlotInventory,
 } from '../data/seed';
 import { nowIso } from '../lib/time';
 
@@ -30,7 +30,6 @@ export interface DataState {
   plans: Record<string, RoutePlan | null>; // C3-F3 draft plan per hub|date|run
   runs: Record<string, { lockedAt: string }>; // locked & published runs, key hub|date|run
   call: { orderId: string; kind: 'confirm' | 'vaani'; ringAt: number } | null; // incoming automated call on the customer phone
-  forecast: ForecastDay[];
   messages: Message[];
   events: EventLog[];
   cart: Record<string, CartItem[]>; // per customer
@@ -71,7 +70,6 @@ function initialData(): DataState {
     plans: {},
     runs: {},
     call: null,
-    forecast: makeForecast(),
     messages: [],
     events: [],
     cart: {},
@@ -113,7 +111,7 @@ export const useStore = create<Store>()(
     }),
     {
       name: 'meesho-dice-demo',
-      version: 14, // bump whenever seed/model shape changes; old saved state is replaced by fresh seed
+      version: 16, // bump whenever seed/model shape changes; old saved state is replaced by fresh seed
       migrate: () => initialData() as unknown as Store,
       partialize: (s) =>
         Object.fromEntries(Object.entries(s).filter(([, v]) => typeof v !== 'function')) as DataState,

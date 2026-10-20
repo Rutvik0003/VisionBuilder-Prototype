@@ -71,6 +71,8 @@ export function OrderDetails() {
   const order = useStore((s) => s.orders.find((o) => o.id === orderId));
   const products = useStore((s) => s.products);
   const address = useStore((s) => s.addresses.find((a) => a.id === order?.addressId));
+  const allOrders = useStore((s) => s.orders);
+  const returnedPart = order?.returnedPart ? allOrders.find((o) => o.id === order.returnedPart) : undefined;
   const [params, setParams] = useSearchParams();
   const t = useT();
   const nav = useNavigate();
@@ -104,6 +106,7 @@ export function OrderDetails() {
         return <TrackingCard order={order} onCall={() => openSheet('call')} onMessage={() => openSheet('message')} onNotHome={() => openSheet('nothome')} />;
       case 'ATTEMPT_FAILED': return <AttemptCard order={order} onMissed={() => openSheet('missed')} />;
       case 'REFUSED_AFTER_INSPECTION': case 'RTO': return <ReturnedCard order={order} onReplace={() => openSheet('replace')} />;
+      case 'DELIVERED': return returnedPart ? <ReturnedCard order={returnedPart} partOf={order} onReplace={() => nav(`/customer/orders/${returnedPart.id}?sheet=replace`)} /> : null;
       case 'AT_HUB': return <AtHubCard order={order} />;
       case 'ACCEPTED':
         return order.homeCheck === 'awaiting' || order.homeCheck === 'no_reply'
@@ -119,6 +122,11 @@ export function OrderDetails() {
       <div className="space-y-2 py-2">
         <section className="bg-white px-4 py-4">
           <StatusChip status={order.status} />
+          {order.groupId && allOrders.filter((o) => o.groupId === order.groupId && o.id !== order.id).map((o) => (
+            <Link key={o.id} to={`/customer/orders/${o.id}`} className="ml-2 chip bg-gray-100 text-ink-muted">Ordered together with #{o.id}</Link>
+          ))}
+          {order.returnedPart && <Link to={`/customer/orders/${order.returnedPart}`} className="ml-2 chip bg-amber-50 text-amber-800">Some items returned at the door · #{order.returnedPart}</Link>}
+          {order.returnedFrom && <Link to={`/customer/orders/${order.returnedFrom}`} className="ml-2 chip bg-gray-100 text-ink-muted">Returned from order #{order.returnedFrom}</Link>}
           {order.replacementFor && (
             <Link to={`/customer/orders/${order.replacementFor}`} className="ml-2 chip bg-sky-50 text-sky-700">{t('replacementFor', { id: order.replacementFor })}</Link>
           )}
@@ -133,9 +141,8 @@ export function OrderDetails() {
           {order.hubId && canChangeTime(order) && ['AT_HUB', 'ACCEPTED', 'HELD'].includes(order.status) && (
             <div className="mt-1 pl-6 text-[11px] text-ink-muted">You can change this until {RUN_CUTOFF[targetRun(order)]} on {fmtDate(order.slot.date)}, when the {targetRun(order).toLowerCase()} delivery run is planned.</div>
           )}
-          {!terminal && order.status !== 'DELIVERED' && (order.needBy || order.deliverOnOrAfter) && (
+          {!terminal && order.status !== 'DELIVERED' && order.deliverOnOrAfter && (
             <div className="mt-1 space-y-0.5 pl-6 text-[12px] text-ink-muted">
-              {order.needBy && <div>Needed by {fmtDate(order.needBy)}</div>}
               {order.deliverOnOrAfter && <div>Cash ready from {fmtDate(order.deliverOnOrAfter)}</div>}
             </div>
           )}

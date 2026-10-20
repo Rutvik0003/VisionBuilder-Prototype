@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { itemsLabel } from '../../services/catalog';
 import { useShallow } from 'zustand/react/shallow';
 import { Camera, CalendarPlus, ClipboardCheck, Clock3, IndianRupee, PackageX, Repeat2, Send, Undo2 } from 'lucide-react';
 import { useUi } from '../../store/ui';
@@ -16,14 +17,14 @@ export function RefusalsView({ hubId, onOpen }: { hubId: string; onOpen: (id: st
   const orders = useStore(useShallow((s) => s.orders.filter((o) => o.hubId === hubId)));
   const events = useStore((s) => s.events);
   const customers = useStore((s) => s.customers);
+  const productsAll = useStore((s) => s.products);
   const ids = new Set(orders.map((o) => o.id));
   useEffect(() => { enforceHoldCap(); }, []);
   const name = (o: Order) => customers.find((c) => c.id === o.customerId)?.name ?? '';
 
   const refused = orders.filter((o) => o.status === 'REFUSED_AFTER_INSPECTION');
-  // Redirect Loop candidates: open-box refusals and RTO parcels (newest first)
-  const loop = orders.filter((o) => o.status === 'REFUSED_AFTER_INSPECTION' || o.status === 'RTO')
-    .sort((a, b) => (b.rto?.at ?? b.refusal?.at ?? '').localeCompare(a.rto?.at ?? a.refusal?.at ?? ''));
+  // Redirect Loop: RTO parcels only (never opened). Open-box refusals were opened, so they go back to the seller.
+  const loop = orders.filter((o) => o.status === 'RTO').sort((a, b) => (b.rto?.at ?? '').localeCompare(a.rto?.at ?? ''));
   const failed = orders.filter((o) => o.status === 'ATTEMPT_FAILED').sort((a, b) => failedAttempts(b) - failedAttempts(a));
   const rto = orders.filter((o) => o.status === 'RTO');
   const count = (name: string) => events.filter((e) => e.name === name && e.orderId && ids.has(e.orderId)).length;
@@ -48,13 +49,38 @@ export function RefusalsView({ hubId, onOpen }: { hubId: string; onOpen: (id: st
         <div className="card p-3"><div className="flex items-center text-2xl font-bold text-brand"><IndianRupee size={20} />{hubBonus(hubId)}</div><div className="text-xs text-ink-muted">Hub bonus (₹{BONUS_PER_REDIRECT} per redirect)</div></div>
       </div>
 
-      <Section n={1} title="Refusals & RTO → Redirect Loop" sub="Open-box refusals (resealed at the door) and RTO parcels (never opened). Quality-check it; if local demand is High, offer it to nearby shoppers who saved this exact item for up to 3 days. First to pay gets it tomorrow; not sold → back to the seller." right={<FeatureTag id="R1" />}>
-        {loop.length === 0 ? <Empty text="Nothing here yet. Parcels appear when a customer refuses an open-box check, or when you mark a failed delivery RTO." /> : (
+      <Section n={1} title="RTO parcels → Redirect Loop" sub="Never opened: the seller's seal is still on. Check the packaging from the outside (don't open it). If local demand is High, offer it to nearby shoppers who saved this exact item for up to 3 days. First to pay gets it tomorrow; not sold → back to the seller." right={<FeatureTag id="R1" />}>
+        {loop.length === 0 ? <Empty text="No RTO parcels. They appear here when you mark a failed delivery RTO (below)." /> : (
           <div className="space-y-2">{loop.map((o) => <RedirectCard key={o.id} o={o} onOpen={onOpen} />)}</div>
         )}
       </Section>
 
-      <Section n={2} title="Failed deliveries" sub={`Re-attempt tomorrow, or mark RTO once a parcel has failed ${RTO_AFTER_ATTEMPTS} times.`} right={<FeatureTag id="C2-F4" />}>
+      <Section n={2} title="Open-box refusals → back to the seller" sub="Opened at the door and resealed in a tamper bag, so they can't be checked or resold. They go straight back to the seller." right={<FeatureTag id="C2-F3" />}>
+        {refused.length === 0 ? <Empty text="No refusals. They appear here when a customer refuses during an open-box check." /> : (
+          <div className="divide-y divide-gray-100 rounded-lg border border-gray-100">
+            {refused.map((o) => {
+              const r = o.refusal!;
+              return (
+                <div key={o.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[repeating-linear-gradient(45deg,#f3f4f6,#f3f4f6_5px,#e5e7eb_5px,#e5e7eb_10px)]" title="Item photo">
+                    <Camera size={15} className="text-ink-muted" />
+                  </span>
+                  <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(o.id)}>
+                    <div className="truncate font-medium hover:text-brand">{customers.find((c) => c.id === o.customerId)?.name} · {itemsLabel(o, productsAll)}</div>
+                    <div className="text-xs text-ink-muted">Refused: {r.reason}{r.damaged ? ' · damaged' : ''} · {fmtDateTime(r.at)}</div>
+                  </button>
+                  <span className="chip bg-gray-100 font-mono font-semibold">Tamper bag {r.sealId}</span>
+                  {r.customerChoice === 'replacement' && <span className="chip bg-sky-50 text-sky-700">Customer ordered a replacement · #{r.replacementOrderId}</span>}
+                  {r.customerChoice === 'closed' && <span className="chip bg-gray-100 text-ink-muted">Customer closed the order</span>}
+                  <span className="chip bg-ink text-white"><Undo2 size={12} /> Returning to seller</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Section>
+
+      <Section n={3} title="Failed deliveries" sub={`Re-attempt tomorrow, or mark RTO once a parcel has failed ${RTO_AFTER_ATTEMPTS} times.`} right={<FeatureTag id="C2-F4" />}>
         {failed.length === 0 ? <Empty text="No failed deliveries." /> : (
           <div className="divide-y divide-gray-100 rounded-lg border border-gray-100">
             {failed.map((o) => {
@@ -89,14 +115,14 @@ export function RefusalsView({ hubId, onOpen }: { hubId: string; onOpen: (id: st
   );
 }
 
-/** R1 Redirect Loop for one refused or RTO parcel: QC → demand score → nudges → first to pay, or back to the seller. */
+/** R1 Redirect Loop for one RTO parcel: packaging check → demand score → nudges → first to pay, or back to the seller. */
 function RedirectCard({ o, onOpen }: { o: Order; onOpen: (id: string) => void }) {
   const customers = useStore((s) => s.customers);
   const products = useStore((s) => s.products);
   const allOrders = useStore((s) => s.orders);
   const showToast = useUi((s) => s.showToast);
   const r = o.refusal;
-  const [qc, setQc] = useState({ rightItem: true, undamaged: !r?.damaged, sealIntact: true });
+  const [qc, setQc] = useState({ sealIntact: true, labelMatches: true, boxUndamaged: true });
   const rd = redirectOf(o);
   const p = products.find((x) => x.id === o.items[0].productId)!;
   const name = (id?: string) => customers.find((c) => c.id === id)?.name ?? '';
@@ -111,7 +137,7 @@ function RedirectCard({ o, onOpen }: { o: Order; onOpen: (id: string) => void })
           <Camera size={15} className="text-ink-muted" />
         </span>
         <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(o.id)}>
-          <div className="truncate font-medium hover:text-brand">{name(o.customerId)} · {p.title}{o.items[0].size ? ` (${o.items[0].size})` : ''}</div>
+          <div className="truncate font-medium hover:text-brand">{name(o.customerId)} · {itemsLabel(o, products)}</div>
           <div className="text-xs text-ink-muted">{r ? <>Refused: {r.reason}{r.damaged ? ' · damaged' : ''} · {fmtDateTime(r.at)}</> : <>RTO after {failedAttempts(o)} failed attempts · {o.rto?.reason} · {o.rto && fmtDateTime(o.rto.at)}</>}</div>
         </button>
         {r ? <span className="chip bg-gray-100 font-mono font-semibold">Seal {r.sealId}</span> : <span className="chip bg-red-50 font-semibold text-danger">RTO · original packaging</span>}
@@ -121,16 +147,16 @@ function RedirectCard({ o, onOpen }: { o: Order; onOpen: (id: string) => void })
 
       {(!rd || rd.state === 'qc') && (
         <div className="rounded-lg bg-gray-50 p-3">
-          <div className="mb-2 text-xs font-semibold">Quality check at the hub <FeatureTag id="R1" /></div>
+          <div className="mb-2 text-xs font-semibold">Packaging check at the hub · parcel stays sealed <FeatureTag id="R1" /></div>
           <div className="flex flex-wrap gap-4">
-            {([['rightItem', 'Right item?'], ['undamaged', 'Undamaged?'], ['sealIntact', 'Seal intact?']] as const).map(([k, label]) => (
+            {([['sealIntact', 'Seller seal intact?'], ['labelMatches', 'Label matches the order?'], ['boxUndamaged', 'Box undamaged (no dents, tears or water)?']] as const).map(([k, label]) => (
               <label key={k} className="flex items-center gap-2 text-sm">
                 <input type="checkbox" className="h-4 w-4 accent-brand" checked={qc[k]} onChange={(e) => setQc({ ...qc, [k]: e.target.checked })} /> {label}
               </label>
             ))}
-            <button className="btn-primary ml-auto !py-1.5 text-xs" onClick={() => runQualityCheck(o.id, qc)}><ClipboardCheck size={14} /> Submit QC</button>
+            <button className="btn-primary ml-auto !py-1.5 text-xs" onClick={() => runQualityCheck(o.id, qc)}><ClipboardCheck size={14} /> Submit check</button>
           </div>
-          <div className="mt-1.5 text-[11px] text-ink-muted">Pass all three → scored for local demand. High → redirect shelf for up to 3 days. Anything else → returned to the seller.</div>
+          <div className="mt-1.5 text-[11px] text-ink-muted">Check from the outside only; don’t open it. All three OK → scored for local demand. High → redirect shelf for up to 3 days. Anything else → back to the seller.</div>
         </div>
       )}
 

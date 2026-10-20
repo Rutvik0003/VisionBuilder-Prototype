@@ -5,7 +5,7 @@ import type { Address, Customer, Hub, Order, Product, RescueReason, RescueScore 
 const CONFIDENCE_RISK: Record<Address['confidence'], number> = { L0: 0.25, L1: 0.15, L2: 0.04, L3: 0.02 };
 
 export interface RescueInput {
-  order: Pick<Order, 'id' | 'payment' | 'slot' | 'needBy' | 'deliverOnOrAfter' | 'homeCheck' | 'items'>;
+  order: Pick<Order, 'id' | 'payment' | 'slot' | 'deliverOnOrAfter' | 'homeCheck' | 'items'>;
   customer: Pick<Customer, 'deliveredOrders' | 'pastRefusalReasons'>;
   address: Pick<Address, 'confidence'>;
   hub?: Pick<Hub, 'tier'>;
@@ -35,7 +35,7 @@ export function scoreOrder({ order, customer, address, hub, products, festiveMod
   const reasons: Record<RescueReason, number> = {
     availability: 0.10 + 0.12 * cod + 0.10 * +(order.slot.window === 'Any time') + 0.08 * +(hub?.tier !== 'metro')
       + 0.10 * +has('not_available') - 0.10 * +(order.homeCheck === 'yes'),
-    timing: 0.05 + 0.10 * +!!order.needBy + 0.08 * +festiveMode + 0.06 * +(cod === 1 && !order.deliverOnOrAfter),
+    timing: 0.05 + 0.08 * +festiveMode + 0.06 * +(cod === 1 && !order.deliverOnOrAfter),
     address: 0.05 + CONFIDENCE_RISK[address.confidence],
     trust: 0.03 + 0.12 * +(cod === 1 && customer.deliveredOrders < 3) + 0.08 * +(has('wrong_item') || has('not_as_shown')),
     price: 0.02 + 0.10 * +notLowest,

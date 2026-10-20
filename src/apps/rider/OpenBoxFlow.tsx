@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { useStore } from '../../store';
 import dayjs from 'dayjs';
-import { Camera, Check, CircleCheck, OctagonAlert, PackageX, Repeat2, ScanLine, ShieldAlert, Timer, Undo2 } from 'lucide-react';
+import { Camera, Check, CircleCheck, OctagonAlert, PackageX, ScanLine, ShieldAlert, Timer, Undo2 } from 'lucide-react';
 import type { Order } from '../../types';
 import { rupees } from '../../lib/format';
 import { useNow } from '../../lib/time';
@@ -8,8 +9,9 @@ import { useUi } from '../../store/ui';
 import { FeatureTag } from '../../components/FeatureTag';
 import {
   CHECKLIST, HARD_STOP_SECONDS, INSPECTION_SECONDS, REFUSAL_REASONS,
-  abortOpenBox, acceptAfterInspection, refuseAfterInspection, startInspection, takeSealPhoto, toggleCheck,
+  abortOpenBox, acceptAfterInspection, refuseAfterInspection, refuseSomeItems, startInspection, takeSealPhoto, toggleCheck,
 } from '../../services/openbox';
+import { sameStop } from '../../services/delivery';
 
 const mmss = (s: number) => `${Math.floor(Math.abs(s) / 60)}:${String(Math.abs(s) % 60).padStart(2, '0')}`;
 
@@ -26,7 +28,16 @@ export function OpenBoxFlow({ order, onDone, onBack }: { order: Order; onDone: (
   const [confirmAbort, setConfirmAbort] = useState(false);
   const [otp, setOtp] = useState('');
   const [sealId, setSealId] = useState('');
+  const multi = order.items.length > 1;
+  const [returning, setReturning] = useState<Set<number>>(() => new Set(order.items.map((_, k) => k))); // default: all items back
+  const partial = multi && returning.size > 0 && returning.size < order.items.length;
+  const products = useStore((s) => s.products);
+  const keptDue = order.items.filter((_, k) => !returning.has(k)).reduce((a, it) => a + it.price * it.qty, 0)
+    + sameStop(order).filter((x) => !x.openBox).reduce((a, x) => a + (x.payment === 'COD' ? x.total : 0), 0);
+  const toggleReturn = (k: number) => setReturning((r) => { const n = new Set(r); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const otpOk = otp === order.deliveryOtp;
+  // other parcels for this door that are handed over at the same time (one stop)
+  const collectDue = [order, ...sameStop(order).filter((x) => !x.openBox)].reduce((a, x) => a + (x.payment === 'COD' ? x.total : 0), 0);
 
   const elapsed = i.startedAt ? dayjs().diff(dayjs(i.startedAt), 'second') : 0;
   const remaining = INSPECTION_SECONDS - elapsed;
@@ -42,9 +53,7 @@ export function OpenBoxFlow({ order, onDone, onBack }: { order: Order; onDone: (
         <div className="text-sm font-semibold">Resealed in tamper-evident bag</div>
         <div className="font-mono text-2xl font-bold tracking-widest text-ink">{result.sealId}</div>
         <div className="text-xs text-ink-muted">Reason: {reason}{damaged ? ' · damaged' : ''}</div>
-        {result.redirectEligible
-          ? <span className="chip bg-emerald-50 !px-3 !py-1 text-success"><Repeat2 size={13} /> Redirect Loop eligible (Grade A)</span>
-          : <span className="chip bg-gray-100 !px-3 !py-1 text-ink-muted"><Undo2 size={13} /> Return to seller</span>}
+        <span className="chip bg-gray-100 !px-3 !py-1 text-ink-muted"><Undo2 size={13} /> Goes back to the seller (opened, can’t be resold)</span>
         <button className="btn-primary w-full !py-3" onClick={onDone}>Next stop</button>
       </div>
     );
@@ -110,7 +119,7 @@ export function OpenBoxFlow({ order, onDone, onBack }: { order: Order; onDone: (
               if (!acceptAfterInspection(order.id, undefined, true)) { showToast(`Tick all ${CHECKLIST.length} checks to confirm delivery`); return; }
               showToast('Delivered after open-box check · ₹13.5 earned'); onDone();
             }}>
-            <CircleCheck size={16} /> Customer accepts · collect {rupees(order.total)}
+            <CircleCheck size={16} /> Customer accepts · collect {rupees(collectDue)}
           </button>
           {!allChecked && (
             <div className="-mt-1 text-center text-[11px] text-ink-muted">
@@ -123,7 +132,23 @@ export function OpenBoxFlow({ order, onDone, onBack }: { order: Order; onDone: (
 
       {refusing && (
         <div className="space-y-2 rounded-lg bg-red-50/60 p-2.5">
-          <div className="text-xs font-semibold">Why is the customer refusing?</div>
+          {multi && (
+            <div className="space-y-1">
+              <div className="text-xs font-semibold">Which items is the customer returning?</div>
+              {order.items.map((it, k) => {
+                const p = products.find((x) => x.id === it.productId);
+                return (
+                  <label key={k} className="flex cursor-pointer items-center gap-2 rounded-md bg-white px-2 py-1.5 text-sm">
+                    <input type="checkbox" className="h-4 w-4 accent-danger" checked={returning.has(k)} onChange={() => toggleReturn(k)} />
+                    <span className="min-w-0 flex-1 truncate">{p?.title}{it.size ? ` (${it.size})` : ''}</span>
+                    <span className="text-xs text-ink-muted">{rupees(it.price * it.qty)}</span>
+                  </label>
+                );
+              })}
+              <div className="text-[11px] text-ink-muted">{partial ? 'The rest is delivered now: the customer pays only for what they keep.' : 'Untick the items the customer keeps.'}</div>
+            </div>
+          )}
+          <div className="text-xs font-semibold">Why is the customer {partial ? 'returning them' : 'refusing'}?</div>
           <div className="flex flex-wrap gap-1.5">
             {REFUSAL_REASONS.map((r) => (
               <button key={r} onClick={() => { setReason(r); if (r === 'Damaged') setDamaged(true); }}
@@ -144,10 +169,22 @@ export function OpenBoxFlow({ order, onDone, onBack }: { order: Order; onDone: (
               className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 font-mono text-sm outline-none focus:border-brand" />
             <button className="btn-outline !py-1.5 text-xs" onClick={() => setSealId('TB-' + String(Math.floor(100000 + Math.random() * 900000)))}><ScanLine size={14} /> Scan</button>
           </div>
-          <button className="btn w-full bg-danger !py-3 text-white" disabled={!reason || !itemPhoto || sealId.length < 4}
-            onClick={() => setResult(refuseAfterInspection(order.id, reason!, damaged, sealId))}>
-            <ShieldAlert size={16} /> Reseal in tamper-evident bag
-          </button>
+          {partial && <OtpField order={order} value={otp} onChange={setOtp} />}
+          {partial ? (
+            <button className="btn w-full bg-danger !py-3 text-white" disabled={!reason || !itemPhoto || sealId.length < 4 || !otpOk}
+              onClick={() => {
+                refuseSomeItems(order.id, [...returning], reason!, damaged, sealId, true);
+                showToast(`${returning.size} item${returning.size > 1 ? 's' : ''} resealed for the seller · rest delivered`);
+                onDone();
+              }}>
+              <ShieldAlert size={16} /> Reseal returned items · deliver the rest · collect {rupees(keptDue)}
+            </button>
+          ) : (
+            <button className="btn w-full bg-danger !py-3 text-white" disabled={!reason || !itemPhoto || sealId.length < 4 || returning.size === 0}
+              onClick={() => setResult(refuseAfterInspection(order.id, reason!, damaged, sealId))}>
+              <ShieldAlert size={16} /> Reseal in tamper-evident bag
+            </button>
+          )}
           <button className="w-full text-xs text-ink-muted" onClick={() => { setRefusing(false); setReason(null); setItemPhoto(false); }}>Back</button>
         </div>
       )}

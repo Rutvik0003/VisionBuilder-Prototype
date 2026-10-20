@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { itemsLabel } from '../../services/catalog';
 import { useSearchParams } from 'react-router-dom';
 import { Camera, CircleSlash, Clock4, Moon, PackageCheck, PhoneCall, Tag, Truck, Unlock, Warehouse } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
@@ -69,6 +70,7 @@ function useNames() {
     customer: (o: Order) => customers.find((c) => c.id === o.customerId)!,
     product: (o: Order) => products.find((p) => p.id === o.items[0].productId)!,
     hub: (o: Order) => hubs.find((h) => h.id === o.hubId),
+    products,
   };
 }
 
@@ -119,8 +121,13 @@ function OrdersTab({ orders }: { orders: Order[] }) {
                 <td className="px-2 py-3"><div className="font-mono text-xs">#{o.id}</div><div className="text-[11px] text-ink-muted">{fmtDateTime(o.createdAt)}</div></td>
                 <td className="px-2 py-3">{c.name}<div className="text-[11px] text-ink-muted">{c.id === 'existing' ? 'Existing user' : 'New user'}</div></td>
                 <td className="max-w-[200px] px-2 py-3">
-                  <div className="truncate">{p.title}</div><div className="text-[11px] text-ink-muted">{p.sellerName}</div>
+                  {o.items.map((it, k) => {
+                    const ip = n.products.find((x) => x.id === it.productId);
+                    return <div key={k} className="truncate">{ip?.title}{it.size ? ` (${it.size})` : ''}{it.qty > 1 ? ` × ${it.qty}` : ''}</div>;
+                  })}
+                  <div className="text-[11px] text-ink-muted">{p.sellerName}{o.items.length > 1 ? ` · ${o.items.length} items in one parcel` : ''}</div>
                   {o.replacementFor && <span className="chip bg-sky-50 !text-[10px] text-sky-700">Replacement for #{o.replacementFor}</span>}
+                  {o.groupId && <span className="chip bg-gray-100 !text-[10px] text-ink-muted" title="One checkout, split by seller">Split checkout · #{o.groupId}</span>}
                   {o.openBox && <span className="chip bg-brand-light !text-[10px] text-brand">Open-box</span>}
                 </td>
                 <td className="px-2 py-3">{o.payment === 'COD' ? <span className="chip bg-amber-50 text-amber-700">COD {rupees(o.total)}</span> : <span className="chip bg-emerald-50 text-success">Prepaid {rupees(o.total)}</span>}</td>
@@ -128,7 +135,6 @@ function OrdersTab({ orders }: { orders: Order[] }) {
                 <td className="px-2 py-3">
                   {fmtDate(o.slot.date)}
                   {o.delay && o.status === 'DELAYED_IN_TRANSIT' && <div className="text-[11px] font-medium text-amber-700">→ {fmtDate(o.delay.newDate)}</div>}
-                  {o.needBy && <div className="text-[11px] text-ink-muted">Needed by {fmtDate(o.needBy)}</div>}
                 </td>
                 <td className="px-2 py-3">
                   <span className={`chip ${chip[1]}`}>{chip[0]}</span>
@@ -178,8 +184,11 @@ function ConfirmTab({ orders }: { orders: Order[] }) {
         <Moon size={14} /> No automated calls between 9 pm and 9 am. {quiet ? <b className="text-amber-700">Quiet hours now: calls are queued for 9 am.</b> : 'Calls go out now.'}
         <FeatureTag id="P1" />
       </div>
-      {orders.map((o) => {
-        const c = n.customer(o), p = n.product(o), cf = o.confirm!;
+      {/* One card per checkout: a cart split by seller is confirmed (and called) once */}
+      {[...new Map(orders.map((o) => [o.groupId ?? o.id, orders.filter((x) => (x.groupId ?? x.id) === (o.groupId ?? o.id))])).values()].map((group) => {
+        const o = group[0];
+        const c = n.customer(o), cf = o.confirm!;
+        const total = group.reduce((a, x) => a + x.total, 0);
         const call = () => {
           const r = placeConfirmCall(o.id);
           showToast(r === 'queued' ? 'Quiet hours: call queued for 9 am' : r === 'ringing' ? `Calling ${c.name.split(' ')[0]}… (open the customer app)` : 'No call needed');
@@ -187,7 +196,12 @@ function ConfirmTab({ orders }: { orders: Order[] }) {
         return (
           <div key={o.id} className="card flex flex-wrap items-center gap-3 p-3 text-sm">
             <div className="min-w-0 flex-1">
-              <div className="font-medium">{c.name} · {p.title} · {rupees(o.total)} COD <span className="font-mono text-xs text-ink-muted">#{o.id}</span></div>
+              <div className="font-medium">{c.name} · {rupees(total)} COD{group.length > 1 && <span className="text-ink-muted"> · {group.length} orders, one confirmation</span>}</div>
+              <div className="mt-0.5 space-y-0.5 text-xs text-ink-muted">
+                {group.map((x) => (
+                  <div key={x.id}><span className="font-mono">#{x.id}</span> · {itemsLabel(x, n.products)} · {n.product(x).sellerName} · {rupees(x.total)}</div>
+                ))}
+              </div>
               <div className="mt-1 flex flex-wrap gap-1">
                 <span className={`chip ${cf.risk === 'high' ? 'bg-red-50 text-danger' : 'bg-amber-50 text-amber-700'}`}>{cf.risk} risk</span>
                 {cf.reasons.map((r) => <span key={r} className="chip bg-gray-100 text-ink-muted">{r}</span>)}
@@ -217,7 +231,6 @@ function RefusalsTab({ orders }: { orders: Order[] }) {
     <div className="grid gap-3 md:grid-cols-2">
       {orders.map((o) => {
         const r = o.refusal!;
-        const state = r.redirect?.state;
         return (
           <div key={o.id} className="card flex gap-3 p-3 text-sm">
             <div className="flex gap-1.5">
@@ -228,11 +241,11 @@ function RefusalsTab({ orders }: { orders: Order[] }) {
               ))}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="font-medium">{n.product(o).title}</div>
+              <div className="font-medium">{itemsLabel(o, n.products)}</div>
               <div className="text-xs text-ink-muted">{n.customer(o).name} · {r.reason}{r.damaged ? ' · damaged' : ''} · {fmtDateTime(r.at)}</div>
               <div className="mt-1 font-mono text-xs font-semibold">Seal {r.sealId}</div>
               <span className="chip mt-1 bg-gray-100 text-ink-muted">
-                {state === 'sold' ? 'Resold nearby (redirect)' : state === 'shelf' ? 'On hub redirect shelf' : state === 'returned' ? `Returning to you · ${r.redirect?.returnReason}` : 'At hub · quality check pending'}
+                Returning to you · opened at the door, can’t be resold
               </span>
             </div>
           </div>
@@ -253,7 +266,7 @@ function RedirectSalesTab({ orders }: { orders: Order[] }) {
         return (
           <div key={o.id} className="flex flex-wrap items-center gap-3 px-2 py-2.5 text-sm">
             <Tag size={16} className="text-success" />
-            <span className="min-w-0 flex-1 truncate">{n.product(o).title} · {o.rto ? 'RTO parcel' : 'refused at the door'} · sold on your listing to {customers.find((c) => c.id === r.buyerId)?.name}</span>
+            <span className="min-w-0 flex-1 truncate">{itemsLabel(o, n.products)} · {o.rto ? 'RTO parcel' : 'refused at the door'} · sold on your listing to {customers.find((c) => c.id === r.buyerId)?.name}</span>
             <span className="font-semibold">{rupees(r.price ?? 0)}</span>
             <span className="font-mono text-xs text-ink-muted">new order #{r.newOrderId} · was #{o.id}</span>
           </div>

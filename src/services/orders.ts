@@ -5,7 +5,7 @@ import type { Address, CartItem, Hub, Order, OrderStatus, Payment, RescueScore }
 import { latency } from './api';
 import { nowIso } from '../lib/time';
 import { clusterInfo, openBoxEligible } from './catalog';
-import { confirmSlot } from './slots';
+import { availability, confirmSlot } from './slots';
 import { scoreOrder } from './rescue';
 
 const orderId = customAlphabet('0123456789', 9);
@@ -61,66 +61,112 @@ export function rescore(orderId: string, trigger: 'hub_accept' | 'home_check') {
 
 export class SlotUnavailableError extends Error {}
 
+/**
+ * Place a checkout. Items from the same seller travel as one order (one parcel); items from different sellers
+ * become one order per seller, linked by `groupId`. A group is confirmed together (one WhatsApp, one call),
+ * shares one delivery slot and one delivery OTP, and is delivered together at the door.
+ * Returns the orders, the first one being the group's lead.
+ */
 export async function placeOrder(input: {
   customerId: Order['customerId']; items: CartItem[]; address: Address; payment: Payment; fromCart: boolean;
-  slot?: Order['slot']; holdId?: string; needBy?: string; deliverOnOrAfter?: string; openBox?: boolean;
-}): Promise<Order> {
+  slot?: Order['slot']; holdId?: string; deliverOnOrAfter?: string; openBox?: boolean;
+}): Promise<Order[]> {
   return latency(() => {
     const s = useStore.getState();
     const customer = s.customers.find((c) => c.id === input.customerId)!;
     const lines = lineItems(input.items);
-    const { total } = priceSummary(input.items, input.payment);
     const promisedDate = promisedDateFor(input.address);
-    // Open-box is the customer's choice (opt-in), only on COD and only if an item's category allows it.
-    const openBox = !!input.openBox && input.payment === 'COD' && lines.some((l) => openBoxEligible(l.product, customer, input.address));
     // C1-F1: slots only exist for pilot hubs; elsewhere it's the promised date, any time.
     const slot = input.address.hubId && input.slot ? input.slot : { date: promisedDate, window: 'Any time' as const };
+
+    // One order per seller, in the order the items appear
+    const sellers = [...new Set(lines.map((l) => l.product.sellerId))];
+    const parts = sellers.map((sellerId) => lines.filter((l) => l.product.sellerId === sellerId));
+
+    // Every parcel takes a seat in the window: check there is room for all of them before booking any.
+    if (input.address.hubId && slot.window !== 'Any time' && parts.length > 1
+      && availability(s, input.address.hubId, slot.date, slot.window, input.holdId).left < parts.length) {
+      throw new SlotUnavailableError(`${slot.window} on ${slot.date} has no room for ${parts.length} parcels`);
+    }
     if (input.address.hubId && !confirmSlot(input.address.hubId, slot.date, slot.window, input.holdId)) {
       throw new SlotUnavailableError(`${slot.window} on ${slot.date} just filled up`);
     }
-    const order: Order = {
-      id: orderId(),
-      customerId: input.customerId,
-      items: lines.map((l) => ({ productId: l.productId, qty: l.qty, price: l.product.price, size: l.size })),
-      total,
-      payment: input.payment,
-      addressId: input.address.id,
-      hubId: input.address.hubId,
-      promisedDate,
-      slot,
-      needBy: input.needBy,
-      deliverOnOrAfter: input.payment === 'COD' ? input.deliverOnOrAfter : undefined,
-      openBox,
-      status: 'PLACED',
-      homeCheck: 'not_sent',
-      rescue: undefined as unknown as RescueScore, // scored just below
-      attempts: [],
-      timeline: [{ at: nowIso(), status: 'PLACED', note: 'Order placed' }],
-      createdAt: nowIso(),
-      rescheduleCount: 0,
-      deliveryOtp: String(1000 + Math.floor(Math.random() * 9000)), // D1.8: read out to the rider at the door
-    };
-    order.rescue = scoreFromStore(order);
+    for (let i = 1; i < parts.length; i++) {
+      if (input.address.hubId) confirmSlot(input.address.hubId, slot.date, slot.window);
+    }
+
+    const deliveryOtp = String(1000 + Math.floor(Math.random() * 9000)); // D1.8: one OTP for the whole door drop
+    const ids = parts.map(() => orderId());
+    const groupId = parts.length > 1 ? ids[0] : undefined;
+    const orders: Order[] = parts.map((part, i) => {
+      const { total: partTotal } = priceSummary(part.map((l) => ({ productId: l.productId, qty: l.qty, size: l.size })), input.payment);
+      // The UPI discount is once per checkout: it stays on the lead order only.
+      const total = i === 0 || input.payment !== 'UPI' ? partTotal : partTotal + UPI_DISCOUNT;
+      // Open-box is the customer's choice (opt-in), only on COD and only for parcels whose category allows it.
+      const openBox = !!input.openBox && input.payment === 'COD' && part.some((l) => openBoxEligible(l.product, customer, input.address));
+      const order: Order = {
+        id: ids[i],
+        customerId: input.customerId,
+        items: part.map((l) => ({ productId: l.productId, qty: l.qty, price: l.product.price, size: l.size })),
+        total,
+        payment: input.payment,
+        addressId: input.address.id,
+        hubId: input.address.hubId,
+        promisedDate,
+        slot,
+        deliverOnOrAfter: input.payment === 'COD' ? input.deliverOnOrAfter : undefined,
+        openBox,
+        status: 'PLACED',
+        homeCheck: 'not_sent',
+        rescue: undefined as unknown as RescueScore, // scored just below
+        attempts: [],
+        timeline: [{ at: nowIso(), status: 'PLACED', note: groupId ? `Order placed · parcel ${i + 1} of ${parts.length}` : 'Order placed' }],
+        createdAt: nowIso(),
+        rescheduleCount: 0,
+        deliveryOtp,
+        groupId,
+      };
+      order.rescue = scoreFromStore(order);
+      return order;
+    });
+
     s.patch((st) => ({
-      orders: [order, ...st.orders],
+      orders: [...orders, ...st.orders], // lead first in the list
       cart: input.fromCart
         ? { ...st.cart, [input.customerId]: (st.cart[input.customerId] ?? []).filter((c) => !input.items.some((i) => i.productId === c.productId)) }
         : st.cart,
       checkout: null,
     }));
-    s.log('CORE', 'order_placed', 'customer', { total, payment: input.payment, hubId: order.hubId, promisedDate }, order.id);
-    s.log('C3-F2', 'rescue_scored', 'system', { trigger: 'place_order', pRto: order.rescue.pRto, band: order.rescue.band, topReason: order.rescue.topReason }, order.id);
-    if (order.rescue.holdout) s.log('C3-F2', 'holdout_assigned', 'system', {}, order.id);
-    if (order.hubId) {
-      s.log('C1-F1', 'slot_confirmed', 'system', { date: slot.date, window: slot.window }, order.id);
-      if (order.needBy) s.log('C1-F1', 'need_by_set', 'customer', { needBy: order.needBy }, order.id);
-      if (order.deliverOnOrAfter) s.log('C1-F1', 'cod_date_selected', 'customer', { deliverOnOrAfter: order.deliverOnOrAfter }, order.id);
+    if (groupId) s.log('CORE', 'order_split_by_seller', 'system', { orders: ids, sellers: sellers.length }, groupId);
+    for (const order of orders) {
+      s.log('CORE', 'order_placed', 'customer', { total: order.total, payment: input.payment, hubId: order.hubId, promisedDate, groupId: groupId ?? null }, order.id);
+      s.log('C3-F2', 'rescue_scored', 'system', { trigger: 'place_order', pRto: order.rescue.pRto, band: order.rescue.band, topReason: order.rescue.topReason }, order.id);
+      if (order.rescue.holdout) s.log('C3-F2', 'holdout_assigned', 'system', {}, order.id);
+      if (order.hubId) {
+        s.log('C1-F1', 'slot_confirmed', 'system', { date: slot.date, window: slot.window }, order.id);
+        if (order.deliverOnOrAfter) s.log('C1-F1', 'cod_date_selected', 'customer', { deliverOnOrAfter: order.deliverOnOrAfter }, order.id);
+      }
+      if (order.openBox) s.log('C2-F3', 'openbox_order_placed', 'system', {}, order.id);
     }
-    if (openBox) s.log('C2-F3', 'openbox_order_placed', 'system', {}, order.id);
     const multiClusters = lines.filter((l) => clusterInfo(l.product, s.products).multi).map((l) => l.product.clusterId);
-    if (multiClusters.length) s.log('C3-F1', 'post_order_suppressed', 'system', { clusterIds: multiClusters }, order.id);
-    return order;
+    if (multiClusters.length) s.log('C3-F1', 'post_order_suppressed', 'system', { clusterIds: multiClusters }, orders[0].id);
+    return orders;
   }, 400, 700);
+}
+
+/** Orders placed in the same checkout (just this order when it wasn't split). */
+export function groupOf(o: Order): Order[] {
+  if (!o.groupId) return [o];
+  return useStore.getState().orders.filter((x) => x.groupId === o.groupId);
+}
+
+/**
+ * Other parcels going to the same door on the same day (a split checkout, or two separate orders).
+ * They move together when the day changes and are delivered (or attempted) together by the rider.
+ */
+export function dropSiblings(o: Order, statuses?: OrderStatus[]): Order[] {
+  return useStore.getState().orders.filter((x) => x.id !== o.id && x.customerId === o.customerId
+    && x.addressId === o.addressId && x.slot.date === o.slot.date && (!statuses || statuses.includes(x.status)));
 }
 
 export function setOrderStatus(id: string, status: OrderStatus, note: string, extra: Partial<Order> = {}) {

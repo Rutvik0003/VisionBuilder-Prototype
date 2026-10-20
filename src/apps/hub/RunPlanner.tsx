@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { itemsLabel } from '../../services/catalog';
 import { CircleMarker, MapContainer, Marker, Polyline, TileLayer, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import { ArrowRightLeft, Bike, Lock, Trash2, TriangleAlert } from 'lucide-react';
@@ -90,6 +91,7 @@ function StopRow({ hub, planKey, order, seq, currentRider, reason, carried, onOp
 }) {
   const customer = useStore((s) => s.customers.find((c) => c.id === order.customerId)!);
   const address = useStore((s) => s.addresses.find((a) => a.id === order.addressId)!);
+  const products = useStore((s) => s.products);
   const riders = useStore(useShallow((s) => s.riders.filter((r) => r.hubId === hub.id)));
   const [moving, setMoving] = useState(false);
   const [to, setTo] = useState('');
@@ -103,7 +105,7 @@ function StopRow({ hub, planKey, order, seq, currentRider, reason, carried, onOp
           <span className="block truncate font-medium hover:text-brand">
             {customer.name}{!customer.background && <span className="chip ml-1 bg-brand !text-[9px] text-white">Demo</span>}
           </span>
-          <span className="block truncate text-[11px] text-ink-muted">{address.area} · {order.slot.window === 'Any time' ? 'Any time' : order.slot.window.split(' ')[1]} · <span className="font-mono" title="DIGIPIN-6 cluster">{cluster6(deliveryPoint(address))}</span>{order.openBox ? ` · open-box +${OPEN_BOX_MIN} min` : ''}</span>
+          <span className="block truncate text-[11px] text-ink-muted">{itemsLabel(order, products)} · {address.area} · {order.slot.window === 'Any time' ? 'Any time' : order.slot.window.split(' ')[1]} · <span className="font-mono" title="DIGIPIN-6 cluster">{cluster6(deliveryPoint(address))}</span>{order.openBox ? ` · open-box +${OPEN_BOX_MIN} min` : ''}</span>
         </button>
         {carried && <span className="chip bg-sky-50 !text-[10px] text-sky-700" title="Carried over from an earlier run or day">Carried</span>}
         {reason ? <span className="chip bg-red-100 !text-[10px] font-semibold text-danger">{reason}</span> : <HomeChip o={order} />}

@@ -256,3 +256,52 @@ _This section supersedes the earlier "IVR order confirmation" notes._
 - **Lockout is per order:** 3 wrong PINs lock **that order only** (same items and sizes) for 5 minutes. A different order can still be placed with the correct PIN, and the lock sheet says so.
 - **Separate attempt counts:** wrong-PIN counts are kept per order. Turning the lock off or changing the PIN has its own count.
 - **Unchanged:** the owner's WhatsApp alert on the 3rd wrong PIN. **Forgot PIN → OTP** sets a new PIN and clears every lockout.
+
+## Removed at the team's request (2026-10-20)
+- **"Need it by a date?":** removed from checkout, the order pages, the hub drawer and Seller & Transit, along with the "won't make your need-by date" delay warning. The rescue score no longer uses it.
+- **Activity Log screen (`/log`):** removed from the Launcher and the routes. Events are still recorded in the store, and the tests read them.
+- **Network Ops / PeakPromise:** the `/ops` screen and its 21-day forecast data are removed.
+- **Hub Risk tab:** removed from Hardoi LMDC and Pune. The rescue engine still orders the Replies list (riskiest first) and shows the next-best action in the parcel drawer.
+
+## Several items, several sellers (team request, 2026-10-20)
+- **Split by seller:** a checkout becomes one order per seller. Items from the same seller travel as one order (one parcel); different sellers give separate orders linked by `groupId`. Each parcel ships, and can be delayed, on its own at Seller & Transit.
+- **Shared slot and OTP:** the parcels share the chosen slot (each takes a seat in the window, so the window must have room for all of them) and one delivery OTP. The UPI discount applies once per checkout.
+- **One confirmation per checkout:**
+  - The risk flag is worked out for the whole checkout (e.g. high value uses the combined total).
+  - One WhatsApp lists every item, with **Confirm all / Keep some, cancel some / Cancel all**.
+  - Seller & Transit shows one card and places **one** call ("No tap in 10 min" and "3 hours later" cover the whole checkout).
+  - On the call: **1** confirm all, **2** cancel all, **3** go item by item (1 keep / 2 cancel).
+  - "Never reached", Pay by UPI and the reorder link are also per checkout.
+- **Keeping some items:**
+  - A seller's order whose items are all cancelled is cancelled, and its slot seat freed.
+  - An order that keeps some items is trimmed (total recomputed) and confirmed.
+- **Same door, same day:** parcels for the same door on the same day, whether a split checkout or separate orders, are treated as one drop.
+  - **Before the rider:** one "Will you be home?" (already merged), one automated call from the hub, and changing the day moves them all.
+  - **On the route:** one rider (the planner keeps a door together) and one "10 min away" message.
+  - **At the door:** one arrival, one OTP, one handover and one rider payment for the drop; "Collect" shows the total.
+  - **If it fails:** "I'm not home" skips them all, a failed attempt covers them all with one message, and "I was here" / "I missed it" answer for all of them.
+  - **Exception:** an open-box parcel still gets its own check at the door.
+- **Calls after a reload:** an answered call is cleared at once, so reloading the page never rings it again.
+- **Cash-day wording:** reworded for first-time and less-literate users: "Paying cash? When will you have the money? We will come on that day or later (for example, your salary day)."
+
+## Redirect Loop: RTO parcels only (team request, 2026-10-20)
+- **Open-box refusals go back to the seller.** They were opened at the door and resealed in a tamper bag, so the hub can't check or resell them. The hub's Returns tab lists them under "Open-box refusals → back to the seller", and Seller & Transit shows "Returning to you". The customer can still order again or close the order.
+- **Only RTO parcels enter the Redirect Loop.** These are parcels marked RTO after 3 failed attempts; they were never opened and the seller's seal is still on.
+- **The quality check is a packaging check from the outside.** The hub checks three things: *Seller seal intact? · Label matches the order? · Box undamaged (no dents, tears or water)?*
+  - All three OK → the parcel is scored for local demand. High → redirect shelf for up to 3 days. Anything else → back to the seller.
+- **The nudge wording now says "Still in its original sealed pack, checked at your local hub".**
+- **Home no longer shows the "Hiding n listings of items you've already ordered" line.** Listings for items already on their way are still hidden, just without that note.
+
+## Multi-item parcels and open-box (team request, 2026-10-20)
+- **Every item is named.** A parcel with several items from one seller lists all of them, e.g. "Blackout Door Curtains (Set of 2) + Cushion Covers (Set of 5)".
+  - Seller & Transit puts one line per item plus "N items in one parcel".
+  - The hub names every item on its tables (Inbound, Replies, Held, Disputes), the run planner, the Returns tab and the shipping label.
+- **Open-box, one parcel with several items:** after "Customer refuses", the rider ticks which items are coming back (all are ticked by default).
+  - If only some are returned, those items are resealed in a tamper bag and move to their own order (refused → back to the seller, with Order again / Close for the customer).
+  - The rest is delivered with the OTP, and the customer pays only for what they keep. The two orders link to each other ("Some items returned at the door" / "Returned from order #…").
+- **Open-box, several parcels at one door (different sellers):** each parcel still gets its own open-box check. Accepting one never hands over the other; the other can be accepted or refused on its own.
+- **Returning part of a parcel, what the customer sees:**
+  - **WhatsApp:** says "You kept … and returned … at the door (reason). You paid only for what you kept." It offers **Get the correct item / Close order** for the returned part.
+  - **Order page:** the delivered order's page shows the same choice in a "Part of this parcel was returned at the door" card.
+- **Messages opens at the newest message** (like WhatsApp), so a new notification is never hidden at the bottom.
+- **The shipping label is drawn on top of the page, outside the table cell that opens it**, so long addresses and item lists wrap inside the label.

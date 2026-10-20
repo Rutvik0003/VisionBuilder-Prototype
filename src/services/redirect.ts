@@ -1,8 +1,8 @@
-// R1 · Redirect Loop: a parcel refused at the door (open-box, resealed with a seal ID) or marked RTO after failed
-// attempts (still in its original packaging) is quality-checked at the hub,
-// scored for local demand, and offered to nearby shoppers who have the exact item in their cart / wishlist.
-// The first to pay gets it, delivered tomorrow from the hub — no trip back to the seller.
-// No clock: "next 5 after a few hours" and "hold window ended" are hub buttons; the 3-day cap also applies on real dates.
+// R1 · Redirect Loop for RTO parcels only. A parcel marked RTO after failed attempts was never opened: the seller's
+// seal is still on. The hub checks it from the outside (seal, label, box), scores local demand, and offers it to nearby
+// shoppers who have the exact item in their cart / wishlist. First to pay gets it, delivered tomorrow from the hub.
+// Open-box refusals are NOT redirected: they were opened at the door and resealed in a tamper bag, so they go back to
+// the seller. No clock: "next 5 after a few hours" and "not sold in 3 days" are hub buttons; the 3-day cap also applies on real dates.
 import dayjs from 'dayjs';
 import { customAlphabet } from 'nanoid';
 import { useStore } from '../store';
@@ -41,10 +41,10 @@ function patchRedirect(o: Order, patch: Partial<Redirect>) {
   return redirect;
 }
 
-/** Called when an open-box parcel is refused and resealed, or a parcel is marked RTO (never opened). */
+/** Called when a parcel is marked RTO (never opened, still under the seller's seal). */
 export function startRedirect(refusedOrderId: string) {
   const o = findOrder(refusedOrderId);
-  if (!o.refusal?.sealId && !o.rto) return;
+  if (!o.rto) return;
   patchRedirect(o, { state: 'qc' });
 }
 
@@ -103,15 +103,16 @@ export function demandFor(refusedOrderId: string): NonNullable<Redirect['demand'
   return { score, inputs: { cartsWishlists: matches, searches7d, sales30to90d, season } };
 }
 
-export function runQualityCheck(refusedOrderId: string, qc: { rightItem: boolean; undamaged: boolean; sealIntact: boolean }) {
+/** Packaging check from the outside (the parcel stays sealed): seller seal, label vs order, box condition. */
+export function runQualityCheck(refusedOrderId: string, qc: { sealIntact: boolean; labelMatches: boolean; boxUndamaged: boolean }) {
   const s = get();
   const o = findOrder(refusedOrderId);
-  if (!o.refusal && !o.rto) return;
-  const passed = qc.rightItem && qc.undamaged && qc.sealIntact;
+  if (!o.rto) return;
+  const passed = qc.sealIntact && qc.labelMatches && qc.boxUndamaged;
   s.log('R1', 'quality_check', 'hub', { ...qc, passed }, o.id);
   if (!passed) {
-    patchRedirect(o, { state: 'returned', qc: { ...qc, passed }, returnReason: 'Failed quality check' });
-    s.log('R1', 'returned_to_seller', 'hub', { reason: 'Failed quality check' }, o.id);
+    patchRedirect(o, { state: 'returned', qc: { ...qc, passed }, returnReason: 'Failed packaging check' });
+    s.log('R1', 'returned_to_seller', 'hub', { reason: 'Failed packaging check' }, o.id);
     return;
   }
   const demand = demandFor(o.id);
@@ -182,7 +183,7 @@ export function buyRedirect(refusedOrderId: string, buyerId: string): Order | nu
     slot: { date: tomorrow, window: 'Any time' }, openBox: false, status: 'ACCEPTED', homeCheck: 'yes',
     rescue: undefined as unknown as Order['rescue'], attempts: [],
     timeline: [
-      { at: nowIso(), status: 'PLACED', note: 'Bought from a nearby hub (sealed, quality-checked)' },
+      { at: nowIso(), status: 'PLACED', note: 'Bought from a nearby hub (original sealed pack)' },
       { at: nowIso(), status: 'ACCEPTED', note: 'At your local hub · delivering tomorrow' },
     ],
     createdAt: nowIso(), rescheduleCount: 0, redirectOf: o.id, deliveryOtp: String(1000 + Math.floor(Math.random() * 9000)),

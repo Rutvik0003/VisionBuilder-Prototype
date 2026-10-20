@@ -5,7 +5,7 @@ import type { Order, OrderStatus, SlotLabel } from '../types';
 import dayjs from 'dayjs';
 import { fmtDate, rupees } from '../lib/format';
 import { t } from '../lib/strings';
-import { rescore, setOrderStatus, updateOrder, UPI_DISCOUNT } from './orders';
+import { rescore, setOrderStatus, updateOrder, UPI_DISCOUNT, dropSiblings } from './orders';
 import { moveBooking } from './slots';
 
 const get = () => useStore.getState();
@@ -85,8 +85,7 @@ export function reportTransitDelay(orderId: string, days = 1, cause: 'missed_dis
     delay: { oldDate, newDate, source: 'transit', cause, prevStatus: o.status },
   });
   const lang = s.lang;
-  let text = t('delayMessage', lang, { newDate: fmtDate(newDate), oldDate: fmtDate(oldDate) });
-  if (o.needBy && o.needBy < newDate) text += '\n' + t(freeCancel ? 'delayNeedBy' : 'delayNeedByNoCancel', lang, { needBy: fmtDate(o.needBy) });
+  const text = t('delayMessage', lang, { newDate: fmtDate(newDate), oldDate: fmtDate(oldDate) });
   s.sendMessage({
     customerId: o.customerId, orderId, channel: 'whatsapp', featureId: 'C1-F5', text,
     buttons: [
@@ -95,8 +94,8 @@ export function reportTransitDelay(orderId: string, days = 1, cause: 'missed_dis
       ...(freeCancel ? [{ label: t('delayCancel', lang), action: `delay_cancel:${orderId}` }] : []),
     ],
   });
-  s.log('C1-F5', 'delay_reported', 'transit', { cause, days, oldDate, newDate, needBy: o.needBy ?? null }, orderId);
-  s.log('C1-F5', 'delay_alert_sent', 'system', { freeCancel, missesNeedBy: !!o.needBy && o.needBy < newDate }, orderId);
+  s.log('C1-F5', 'delay_reported', 'transit', { cause, days, oldDate, newDate }, orderId);
+  s.log('C1-F5', 'delay_alert_sent', 'system', { freeCancel }, orderId);
 }
 
 function answerDelay(orderId: string, answer: string) {
@@ -214,8 +213,21 @@ export const canChangeTime = (o: Order) =>
 
 const ON_ROUTE: Order['status'][] = ['PLANNED', 'OUT_FOR_DELIVERY', 'ARRIVING_SOON'];
 
-/** Returns false when the chosen window is full (or changes are no longer allowed). */
+/**
+ * Returns false when the chosen window is full (or changes are no longer allowed).
+ * Other parcels for the same door that day move with it, so the customer answers once and they still arrive together.
+ */
 export function changeDayTime(orderId: string, date: string, window: SlotLabel): boolean {
+  const siblings = dropSiblings(findOrder(orderId)).filter(canChangeTime);
+  const ok = changeOne(orderId, date, window);
+  if (ok) {
+    for (const s of siblings) changeOne(s.id, date, window);
+    if (siblings.length) get().log('C1-F2', 'drop_moved_together', 'system', { parcels: siblings.length + 1, date, window }, orderId);
+  }
+  return ok;
+}
+
+function changeOne(orderId: string, date: string, window: SlotLabel): boolean {
   const o = findOrder(orderId);
   if (!canChangeTime(o)) return false;
   if (o.hubId && !moveBooking(o.hubId, o.slot, { date, window })) {
@@ -274,13 +286,16 @@ export function markNoReply(orderId: string) {
   const s = get();
   const o = findOrder(orderId);
   if (!['ACCEPTED', 'PLANNED'].includes(o.status) || o.homeCheck !== 'awaiting') return;
-  updateOrder(orderId, { homeCheck: 'no_reply' });
+  // one call for the door: other parcels waiting on the same reply are covered by it
+  const door = [o, ...dropSiblings(o, ['ACCEPTED', 'PLANNED']).filter((x) => x.homeCheck === 'awaiting')];
+  const key = door.map((x) => x.id).join(',');
+  for (const x of door) updateOrder(x.id, { homeCheck: 'no_reply' });
   s.sendMessage({
     customerId: o.customerId, orderId, channel: 'voice', featureId: 'C1-F2',
     text: t('vaaniTranscript', s.lang, { when: deliveryWhen(o) }),
     buttons: [
-      { label: t('vaaniPress1', s.lang), action: `check_yes:${o.id}` },
-      { label: t('vaaniPress2', s.lang), action: `check_change:${o.id}` },
+      { label: t('vaaniPress1', s.lang), action: `check_yes:${key}` },
+      { label: t('vaaniPress2', s.lang), action: `check_change:${key}` },
     ],
   });
   s.log('C1-F2', 'check_no_reply', 'hub', {}, orderId);
@@ -297,7 +312,7 @@ export function releaseHold(orderId: string) {
 // ---------------------------------------------------------------- message buttons
 
 export type InboxAction = 'check_yes' | 'check_change' | 'check_directions' | 'pay_now' | 'delay_ok' | 'delay_pick' | 'delay_cancel'
-  | 'call_rider' | 'not_home' | 'attempt_here' | 'attempt_missed' | 'replace' | 'close_refused' | 'ivr_confirm' | 'ivr_cancel' | 'share_location' | 'pay_upi_ship' | 'reorder' | 'redirect_buy';
+  | 'call_rider' | 'not_home' | 'attempt_here' | 'attempt_missed' | 'replace' | 'close_refused' | 'ivr_confirm' | 'ivr_cancel' | 'share_location' | 'pay_upi_ship' | 'reorder' | 'redirect_buy' | 'ivr_choose';
 
 export function parseAction(action: string): { kind: InboxAction; orderIds: string[] } {
   const [kind, ids] = action.split(':');

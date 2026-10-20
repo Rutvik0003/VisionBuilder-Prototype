@@ -20,6 +20,17 @@ const freshVisit = (): Visit => ({ arrived: false, callsMade: 0, doorMessageSent
 
 const ON_ROUTE: Order['status'][] = ['PLANNED', 'OUT_FOR_DELIVERY', 'ARRIVING_SOON'];
 
+/**
+ * Other parcels for the same door in the same rider's run (e.g. one checkout split by seller).
+ * The rider handles them as ONE stop: one arrival, one OTP, one delivery (or one failed attempt).
+ */
+export function sameStop(o: Order, s: Pick<DataState, 'orders'> = get()): Order[] {
+  if (!o.route) return [];
+  return s.orders.filter((x) => x.id !== o.id && x.customerId === o.customerId && x.addressId === o.addressId
+    && !!x.route && x.route.riderId === o.route!.riderId && x.route.date === o.route!.date && x.route.run === o.route!.run
+    && ON_ROUTE.includes(x.status) && !x.visit?.outcome && !x.visit?.skipRequested);
+}
+
 /** A rider's remaining stops, in order. "Not home" stops stay until the rider skips them. */
 export function pendingStops(s: Pick<DataState, 'orders' | 'riders'>, riderId: string): Order[] {
   const rider = s.riders.find((r) => r.id === riderId)!;
@@ -111,7 +122,9 @@ export function refreshArriving(riderId: string) {
   if (!rider.started) return;
   pendingStops(s, riderId).forEach((o, i) => {
     if (i > 2 || o.status !== 'OUT_FOR_DELIVERY' || o.arrivingNotified) return;
+    const told = sameStop(o).some((x) => x.arrivingNotified);
     setOrderStatus(o.id, 'ARRIVING_SOON', 'About 10 minutes away', { arrivingNotified: true });
+    if (told) { get().log('C1-F3', 'arriving_alert_merged', 'system', {}, o.id); return; } // same door: already told
     get().sendMessage({
       customerId: o.customerId, orderId: o.id, channel: 'whatsapp', featureId: 'C1-F3', text: t('arrivingMsg', get().lang, { rider: rider.name }),
       buttons: [
@@ -150,13 +163,28 @@ export function sendDoorMessage(orderId: string) {
 
 export function markArrived(orderId: string) {
   patchVisit(orderId, { arrived: true });
+  for (const x of sameStop(findOrder(orderId))) patchVisit(x.id, { arrived: true }); // same door, same arrival
   get().log('C2-F4', 'arrived_at_stop', 'rider', { geofence: 'satisfied' }, orderId);
 }
 
 export const canMarkAttempt = (v?: Visit) => !!v && v.arrived && (v.callsMade >= 2 || v.doorMessageSent);
 
-/** Delivered: earnings, learned address (C2-F2), next stop. */
+/**
+ * Delivered: earnings, learned address (C2-F2), next stop.
+ * Other parcels for the same door are handed over in the same stop (one OTP, one drop), except open-box
+ * parcels, which still need their own check at the door.
+ */
 export function markDelivered(orderId: string, note?: string, otpVerified = false) {
+  const o = findOrder(orderId);
+  const together = sameStop(o).filter((x) => !x.openBox);
+  deliverOne(orderId, note, otpVerified, true);
+  for (const x of together) deliverOne(x.id, undefined, otpVerified, false);
+  if (together.length) get().log('CORE', 'delivered_together', 'rider', { parcels: together.length + 1 }, orderId);
+  const rider = get().riders.find((r) => r.id === o.route?.riderId);
+  if (rider) refreshArriving(rider.id);
+}
+
+function deliverOne(orderId: string, note: string | undefined, otpVerified: boolean, firstOfStop: boolean) {
   const s = get();
   const o = findOrder(orderId);
   const rider = s.riders.find((r) => r.id === o.route?.riderId);
@@ -165,13 +193,12 @@ export function markDelivered(orderId: string, note?: string, otpVerified = fals
     attempts: [...o.attempts, { at: nowIso(), riderId: rider?.id ?? '', arrived: true, callsMade: o.visit?.callsMade ?? 0, doorMessageSent: !!o.visit?.doorMessageSent, result: 'delivered' }],
   });
   s.patch((st) => ({
-    riders: st.riders.map((r) => (r.id === rider?.id ? { ...r, earningsToday: r.earningsToday + EARNING_PER_DROP } : r)),
+    riders: st.riders.map((r) => (r.id === rider?.id && firstOfStop ? { ...r, earningsToday: r.earningsToday + EARNING_PER_DROP } : r)), // paid per drop, not per parcel
     customers: st.customers.map((c) => (c.id === o.customerId ? { ...c, deliveredOrders: c.deliveredOrders + 1 } : c)),
   }));
-  s.sendMessage({ customerId: o.customerId, orderId, channel: 'push', featureId: 'CORE', text: t('deliveredPush', s.lang), buttons: [] });
+  if (firstOfStop) s.sendMessage({ customerId: o.customerId, orderId, channel: 'push', featureId: 'CORE', text: t('deliveredPush', s.lang), buttons: [] });
   s.log('CORE', 'delivered', 'rider', { payment: o.payment, collected: o.payment === 'COD' ? o.total : 0, otpVerified }, orderId);
-  learnDrop(o, note, otpVerified);
-  if (rider) refreshArriving(rider.id);
+  if (firstOfStop) learnDrop(o, note, otpVerified); // one drop point per door visit
 }
 
 /** C2-F2: store the drop point; two drops within 30 m → verified (L3) at their midpoint. Address text never changes. */
@@ -215,16 +242,20 @@ export function markAttempt(orderId: string, reason: string): boolean {
     return false;
   }
   const at = nowIso();
-  setOrderStatus(orderId, 'ATTEMPT_FAILED', `Delivery attempted · ${reason}`, {
-    visit: { ...o.visit!, outcome: 'failed' },
-    attempts: [...o.attempts, { at, riderId: o.route!.riderId, arrived: true, callsMade: o.visit!.callsMade, doorMessageSent: o.visit!.doorMessageSent, result: 'failed', reason }],
-  });
+  const stop = [o, ...sameStop(o)]; // same door: one attempt for all its parcels
+  for (const x of stop) {
+    setOrderStatus(x.id, 'ATTEMPT_FAILED', `Delivery attempted · ${reason}`, {
+      visit: { ...(x.visit ?? freshVisit()), arrived: true, callsMade: o.visit!.callsMade, doorMessageSent: o.visit!.doorMessageSent, outcome: 'failed' },
+      attempts: [...x.attempts, { at, riderId: o.route!.riderId, arrived: true, callsMade: o.visit!.callsMade, doorMessageSent: o.visit!.doorMessageSent, result: 'failed', reason }],
+    });
+  }
+  const key = stop.map((x) => x.id).join(',');
   s.sendMessage({
     customerId: o.customerId, orderId, channel: 'whatsapp', featureId: 'C2-F4',
     text: t('attemptMsg', s.lang, { time: dayjs(at).format('h:mm A') }),
     buttons: [
-      { label: t('attemptHere', s.lang), action: `attempt_here:${orderId}` },
-      { label: t('attemptMissed', s.lang), action: `attempt_missed:${orderId}` },
+      { label: t('attemptHere', s.lang), action: `attempt_here:${key}` },
+      { label: t('attemptMissed', s.lang), action: `attempt_missed:${key}` },
     ],
   });
   s.log('C2-F4', 'attempt_marked', 'rider', { reason, calls: o.visit!.callsMade, doorMessage: o.visit!.doorMessageSent }, orderId);
@@ -235,7 +266,11 @@ export function markAttempt(orderId: string, reason: string): boolean {
 
 export function skipStop(orderId: string) {
   const o = findOrder(orderId);
+  // the other parcels for this door were rescheduled with it ("I'm not home" covers the door)
+  const skipped = get().orders.filter((x) => x.id !== o.id && x.customerId === o.customerId && x.addressId === o.addressId
+    && x.route?.riderId === o.route?.riderId && x.visit?.skipRequested && !x.visit.outcome);
   updateOrder(orderId, { visit: { ...(o.visit ?? freshVisit()), outcome: 'skipped' } });
+  for (const x of skipped) updateOrder(x.id, { visit: { ...x.visit!, outcome: 'skipped' } });
   get().log('C1-F3', 'stop_skipped', 'rider', { reason: 'customer_not_home' }, orderId);
   if (o.route) refreshArriving(o.route.riderId);
 }
@@ -273,8 +308,10 @@ function holdFor(o: Order, date: string, window: SlotLabel, note: string) {
 /** C1-F3/10d: "I'm not home" — the rider skips (no failed attempt); the parcel waits for the new slot. */
 export function customerNotHome(orderId: string, date: string, window: SlotLabel) {
   const o = findOrder(orderId);
-  updateOrder(orderId, { visit: { ...(o.visit ?? freshVisit()), skipRequested: true } });
-  holdFor(findOrder(orderId), date, window, `Not home · rescheduled to ${fmtDate(date)}`);
+  for (const x of [o, ...sameStop(o)]) { // every parcel for this door is skipped and moves to the new slot
+    updateOrder(x.id, { visit: { ...(x.visit ?? freshVisit()), skipRequested: true } });
+    holdFor(findOrder(x.id), date, window, `Not home · rescheduled to ${fmtDate(date)}`);
+  }
   answer(orderId, 'C1-F3', t('notHome', get().lang));
   get().log('C1-F3', 'not_home_tapped', 'customer', { newDate: date, window }, orderId);
   if (o.route && ON_ROUTE.includes(o.status)) resequenceRemaining(o.route.riderId);
@@ -297,6 +334,18 @@ export function resequenceRemaining(riderId: string) {
 
 /** "I was here, no one came" → Hub Disputes; the parcel is re-queued for the next day. Never an automatic penalty. */
 export function disputeAttempt(orderId: string) {
+  for (const x of failedTogether(orderId)) disputeOne(x.id);
+}
+
+/** Parcels that failed in the same door visit as this one (one answer covers them all). */
+function failedTogether(orderId: string): Order[] {
+  const o = findOrder(orderId);
+  const at = o.attempts.at(-1)?.at;
+  return get().orders.filter((x) => x.id === o.id || (x.customerId === o.customerId && x.addressId === o.addressId
+    && x.status === 'ATTEMPT_FAILED' && x.attempts.at(-1)?.at === at));
+}
+
+function disputeOne(orderId: string) {
   const o = findOrder(orderId);
   const attempts = o.attempts.map((a, i) => (i === o.attempts.length - 1 ? { ...a, disputed: true, dispute: 'open' as const } : a));
   updateOrder(orderId, { attempts });
@@ -307,7 +356,7 @@ export function disputeAttempt(orderId: string) {
 }
 
 export function attemptMissed(orderId: string, date: string, window: SlotLabel) {
-  holdFor(findOrder(orderId), date, window, `Missed delivery · rescheduled to ${fmtDate(date)}`);
+  for (const x of failedTogether(orderId)) holdFor(findOrder(x.id), date, window, `Missed delivery · rescheduled to ${fmtDate(date)}`);
   answer(orderId, 'C2-F4', t('attemptMissed', get().lang));
   get().log('C2-F4', 'attempt_rescheduled', 'customer', { date, window }, orderId);
 }

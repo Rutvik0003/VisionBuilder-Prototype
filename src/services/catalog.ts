@@ -39,3 +39,11 @@ export function suppressedClusters(customerId: string, orders: Order[], products
 export function openBoxEligible(product: Product, _customer: Customer, address: Address | undefined): boolean {
   return product.openBoxCategory && (!address || !!address.hubId);
 }
+
+/** Every item in a parcel, e.g. "Blackout Door Curtains + Cushion Covers (Set of 5) × 2" (sizes in brackets). */
+export function itemsLabel(o: Pick<Order, 'items'>, products: Product[]): string {
+  return o.items.map((it) => {
+    const p = products.find((x) => x.id === it.productId);
+    return `${p?.title ?? it.productId}${it.size ? ` (${it.size})` : ''}${it.qty > 1 ? ` × ${it.qty}` : ''}`;
+  }).join(' + ');
+}

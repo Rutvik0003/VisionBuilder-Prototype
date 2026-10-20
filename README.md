@@ -2,7 +2,7 @@
 
 Try out the prototype : https://vision-builder-prototype.vercel.app/
 
-A clickable web prototype of **VisionBuilders' RTO-reduction solution** for Meesho (DICE S3). It simulates the whole delivery journey across five apps that share one live store: **Customer**, **Seller & Transit**, **Hub Manager**, **Rider** and **Network Ops**, plus an **Activity Log**.
+A clickable web prototype of **VisionBuilders' RTO-reduction solution** for Meesho (DICE S3). It simulates the whole delivery journey across four apps that share one live store: **Customer**, **Seller & Transit**, **Hub Manager** and **Rider**.
 
 Everything is simulated, with no backend and no real WhatsApp, calls, payments or map APIs. All data lives in your browser.
 
@@ -67,10 +67,8 @@ The first page is the **Launcher**. Pick a role:
 | **Existing User** | Rekha Yadav: 3 saved addresses, past orders, a medium-risk COD buyer |
 | **New User** | Kavita Patel: no address yet, a first-time COD buyer |
 | **Seller & Transit** | Simulator: Seller ships → In transit → Reached hub, delays, awaiting confirmation |
-| **Hub Manager** | Hardoi LMDC / Pune: Inbound, Replies, Held, Routes, Live, Disputes, Returns / Redirect, Risk |
+| **Hub Manager** | Hardoi LMDC / Pune: Inbound, Replies, Held, Routes, Live, Disputes, Returns / Redirect |
 | **Rider** | Suresh, Imran, Deepak (Hardoi): stop-by-stop delivery, open-box check, OTP |
-| **Network Ops** | PeakPromise festive demand vs capacity |
-| **Activity Log** | Every event, with who, what, when and the feature ID |
 
 Tips:
 - **No clock:** nothing happens on a timer. Every step (ship, scan in, plan the run, call…) is a button in one of the apps.
@@ -110,10 +108,8 @@ src/
     Launcher.tsx      role picker, Reset demo, settings
     customer/         customer phone app (checkout, orders, messages, IVR call, child lock…)
     transit/          Seller & Transit simulator
-    hub/              Hub Manager console (tabs, run planner, redirect loop, risk)
+    hub/              Hub Manager console (tabs, run planner, redirect loop)
     rider/            Rider app (stops, open-box flow, OTP)
-    ops/              Network Ops forecast
-    log/              Activity Log
   services/           business logic (slots, routing, delivery, IVR, redirect, DIGIPIN, child lock…)
   store/              shared Zustand store, saved in the browser's localStorage
   data/               seed data (customers, hubs, riders, products, dummy parcels)

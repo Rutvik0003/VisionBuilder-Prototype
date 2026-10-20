@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import dayjs from 'dayjs';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Bike, Check, CircleCheck, DoorOpen, MapPin, MessageSquare, Navigation, PackageOpen, Phone, SkipForward, TriangleAlert, MapPinOff, UserX, WifiOff } from 'lucide-react';
+import { ArrowLeft, Bike, Check, CircleCheck, DoorOpen, MapPin, MessageSquare, Navigation, PackageOpen, Phone, SkipForward, TriangleAlert, MapPinOff, UserX, WifiOff, PackageCheck } from 'lucide-react';
 import { PhoneFrame } from '../../components/PhoneFrame';
 import { OpenBoxFlow, OtpField } from './OpenBoxFlow';
 import { DesktopShell } from '../../components/DesktopShell';
@@ -17,7 +17,7 @@ import { CONFIDENCE_BADGE } from '../../services/addresses';
 import { distanceM } from '../../services/geo';
 import { FAR_ZONE_M, RUN_WINDOW, deliveryPoint } from '../../services/routing';
 import {
-  byRoute, canMarkAttempt, markArrived, markAttempt, markDelivered, nextRunToStart, pendingStops, riderCalls, riderPosition, sendDoorMessage, skipStop, startRoute,
+  byRoute, sameStop, canMarkAttempt, markArrived, markAttempt, markDelivered, nextRunToStart, pendingStops, riderCalls, riderPosition, sendDoorMessage, skipStop, startRoute,
 } from '../../services/delivery';
 
 export function RiderPicker() {
@@ -195,6 +195,10 @@ export function RiderStop() {
   const digipin = encodeDigipin(point.lat, point.lng);
   const riderAt = riderPosition(state, rider.id);
   const v = o.visit;
+  // Other parcels for this door in this run (e.g. one checkout split by seller): one stop, one OTP, one handover.
+  const together = sameStop(o, state);
+  const handOver = together.filter((x) => !x.openBox); // open-box parcels still get their own check
+  const codDue = [o, ...handOver].reduce((a, x) => a + (x.payment === 'COD' ? x.total : 0), 0);
   const done = !!v?.outcome;
   const skipOnly = !!v?.skipRequested && !done;
   const active = !done && !skipOnly && ['OUT_FOR_DELIVERY', 'ARRIVING_SOON'].includes(o.status);
@@ -227,10 +231,18 @@ export function RiderStop() {
         )}
         {done && (
           <div className={`px-4 py-3 text-sm font-semibold ${v!.outcome === 'delivered' ? 'bg-emerald-50 text-success' : 'bg-gray-100 text-ink-muted'}`}>
-            {v!.outcome === 'delivered' ? 'Delivered ✓' : v!.outcome === 'failed' ? 'Attempt recorded' : v!.outcome === 'refused' ? `Refused after inspection · sealed ${o.sealId}` : 'Skipped'}
+            {v!.outcome === 'delivered' ? 'Delivered ✓' : v!.outcome === 'failed' ? 'Attempt recorded' : v!.outcome === 'refused' ? `Refused after inspection · sealed ${o.sealId} · take it back to the hub, it goes to the seller` : 'Skipped'}
           </div>
         )}
         {o.status === 'PLANNED' && <div className="bg-sky-50 px-4 py-2 text-xs text-sky-800">Start this run from the stop list to begin.</div>}
+        {together.length > 0 && !done && !skipOnly && (
+          <div className="flex items-start gap-2 bg-sky-50 px-4 py-2.5 text-[12px] text-sky-900">
+            <PackageCheck size={16} className="mt-0.5 shrink-0" />
+            <div><b>Same door: {together.length + 1} parcels for {c.name}</b> ({[o, ...together].map((x) => '#' + x.id).join(', ')}).
+              {handOver.length > 0 && ' Hand them over together, with one OTP.'}
+              {together.some((x) => x.openBox) && ' The open-box parcel needs its own check after this one.'}</div>
+          </div>
+        )}
 
         <div className="bg-white">
           {offline ? (
@@ -265,7 +277,7 @@ export function RiderStop() {
             {a.directions && <div className="text-ink-muted">Landmark: {a.directions}</div>}
             {a.learned?.riderNote && <div className="text-ink-muted">Rider note: {a.learned.riderNote} <FeatureTag id="C2-F2" /></div>}
             <div className="flex flex-wrap gap-1 pt-1">
-              <span className="chip bg-amber-50 font-semibold text-amber-700">{o.payment === 'COD' ? `Collect ${rupees(o.total)}` : 'Prepaid'}</span>
+              <span className="chip bg-amber-50 font-semibold text-amber-700">{codDue > 0 ? `Collect ${rupees(codDue)}` : 'Prepaid'}</span>
               {o.openBox && <span className="chip bg-brand-light text-brand"><PackageOpen size={11} /> Open-box</span>}
               {farZone && <span className="chip bg-amber-100 text-amber-800">Far zone</span>}
               <span className={`chip ${stopState(o).tone}`}>{stopState(o).label}</span>
@@ -314,7 +326,7 @@ export function RiderStop() {
                 </div>
                 <button className="btn bg-success w-full !py-3 text-white" disabled={otp !== o.deliveryOtp}
                   onClick={() => { markDelivered(o.id, note, true); showToast('Delivered · ₹13.5 earned'); nav(back); }}>
-                  {o.payment === 'COD' ? `Collected ${rupees(o.total)} · Confirm delivery` : 'Confirm delivery'}
+                  {codDue > 0 ? `Collected ${rupees(codDue)} · Confirm delivery` : 'Confirm delivery'}
                 </button>
                 <button className="w-full text-xs text-ink-muted" onClick={() => setMode('none')}>Back</button>
               </div>
