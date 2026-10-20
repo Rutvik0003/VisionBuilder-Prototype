@@ -1,5 +1,7 @@
 # Meesho DICE: Delivery Orchestration Prototype
 
+Try out the prototype : https://vision-builder-prototype.vercel.app/
+
 A clickable web prototype of **VisionBuilders' RTO-reduction solution** for Meesho (DICE S3). It simulates the whole delivery journey across five apps that share one live store: **Customer**, **Seller & Transit**, **Hub Manager**, **Rider** and **Network Ops**, plus an **Activity Log**.
 
 Everything is simulated, with no backend and no real WhatsApp, calls, payments or map APIs. All data lives in your browser.
