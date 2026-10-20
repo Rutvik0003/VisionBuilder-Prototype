@@ -1,6 +1,6 @@
 import { useStore } from '../store';
 
-/** Tiny feature-ID tag (e.g. C1-F2), shown only when "Show feature tags" is on in the Launcher. */
+/** Tiny feature-ID tag (e.g. C1-F2), shown only when "Show feature tags" is on (sidebar). */
 export function FeatureTag({ id, className = '' }: { id: string; className?: string }) {
   const on = useStore((s) => s.showTags);
   if (!on) return null;

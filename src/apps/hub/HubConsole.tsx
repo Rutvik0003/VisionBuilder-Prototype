@@ -29,7 +29,7 @@ type View = 'inbound' | 'replies' | 'held' | 'routes' | 'live' | 'disputes' | 'r
 export function HubPicker() {
   const { hubs, orders } = useStore();
   return (
-    <DesktopShell title="Hub Manager" sub="Pick your last-mile hub" back="/" wide={false}>
+    <DesktopShell title="Hub Manager" sub="Pick your last-mile hub" wide={false}>
       <div className="grid gap-3 sm:grid-cols-2">
         {hubs.map((h) => {
           const incoming = orders.filter((o) => o.hubId === h.id && o.status === 'AT_HUB').length;

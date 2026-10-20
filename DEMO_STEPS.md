@@ -3,7 +3,7 @@
 One action per line. Follow the lines in order; there is no need to reset in the middle.
 
 **Tab labels**
-- **[L]** Launcher
+- **[L]** sidebar bottom (Reset demo, feature tags)
 - **[C]** Customer phone
 - **[T]** Seller & Transit
 - **[H]** Hub Manager · Hardoi LMDC
@@ -11,21 +11,21 @@ One action per line. Follow the lines in order; there is no need to reset in the
 
 🎙 = what to say. ⚠ = only if it happens.
 
-The **⊞ (Switch app)** icon at the top right of every app goes back to the Launcher.
+Switch roles from the **sidebar** on the left (no browser tabs needed): **[C]** = Existing User / New User, **[T]** = Seller & Transit, **[H]** = Hardoi LMDC, **[R]** = the rider. Each role reopens on the screen you last left it on. "⊞ → Existing / New User" below means: click that account in the sidebar.
 The delivery OTP is always printed on the rider screen ("Demo: this customer's OTP is ____").
 
 ---
 
 ## A. Setup
-1. [L] Open the Launcher.
+1. [L] Open the app (it opens on the customer phone).
 2. [L] Click **Reset demo**.
 3. [L] Click **Reset**.
 4. [L] Optional: tick **Show feature tags**.
-5. Open 4 browser tabs: Customer, Seller & Transit, Hub Manager → **Hardoi LMDC**, and Rider (picker; leave it for now).
+5. Nothing else to open: every role is in the sidebar.
 6. 🎙 "Each app is one role. Nothing runs on a timer; every step is a button."
 
 ## B. New user and address (Kavita)
-7. [C] Launcher → click **New User**.
+7. [C] Sidebar → click **New User**.
 8. [C] Tap **Floral Rayon Kurti** (any of the three).
 9. 🎙 "No address yet, so no delivery date. It says *Add address to see delivery date*."
 10. [C] Tap **Same item from ₹469 · 3 sellers**.

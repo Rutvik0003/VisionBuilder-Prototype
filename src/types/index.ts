@@ -28,7 +28,7 @@ export interface Product {
 
 export interface Customer {
   id: string; // 'existing' | 'new' for the two demo accounts; bg_* for background customers at the hubs
-  background?: boolean; // other shoppers whose parcels fill the hub (not selectable in the Launcher)
+  background?: boolean; // other shoppers whose parcels fill the hub (not in the sidebar)
   name: string;
   blurb: string;
   phone: string;

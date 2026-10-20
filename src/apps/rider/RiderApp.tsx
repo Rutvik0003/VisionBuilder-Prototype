@@ -23,7 +23,7 @@ import {
 export function RiderPicker() {
   const { riders, hubs } = useStore();
   return (
-    <DesktopShell title="Rider" sub="Pick a rider" back="/" wide={false}>
+    <DesktopShell title="Rider" sub="Pick a rider" wide={false}>
       {hubs.map((h) => (
         <div key={h.id} className="mb-5">
           <div className="text-xs font-semibold uppercase tracking-wide text-ink-muted">{h.name}</div>

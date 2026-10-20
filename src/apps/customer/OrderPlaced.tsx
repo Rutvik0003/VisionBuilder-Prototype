@@ -74,7 +74,7 @@ export function OrderPlaced() {
       {!order.confirm && multi && (
         <div className="mx-3 mt-3 rounded-xl bg-sky-50 p-3 text-[13px] text-sky-900">Your items come from {group.length} sellers, so they ship as {group.length} parcels and arrive together.</div>
       )}
-      <p className="mx-6 mt-4 text-center text-[11px] text-ink-muted">Next in the demo: open <b>Seller / Transit</b> from the launcher{order.confirm ? ' once the order is confirmed' : ''}.</p>
+      <p className="mx-6 mt-4 text-center text-[11px] text-ink-muted">Next in the demo: open <b>Seller &amp; Transit</b> in the sidebar{order.confirm ? ' once the order is confirmed' : ''}.</p>
     </Screen>
   );
 }

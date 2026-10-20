@@ -15,7 +15,7 @@ const MAX_EVENTS = 1000;
 
 export interface DataState {
   account: AccountId; // which customer account the customer app is signed in as
-  showTags: boolean; // feature-ID tags (Launcher setting)
+  showTags: boolean; // feature-ID tags (sidebar setting)
   lang: Lang;
   festiveMode: boolean;
   datePadding: boolean;

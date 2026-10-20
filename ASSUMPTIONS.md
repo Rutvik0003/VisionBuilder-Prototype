@@ -305,3 +305,9 @@ _This section supersedes the earlier "IVR order confirmation" notes._
   - **Order page:** the delivered order's page shows the same choice in a "Part of this parcel was returned at the door" card.
 - **Messages opens at the newest message** (like WhatsApp), so a new notification is never hidden at the bottom.
 - **The shipping label is drawn on top of the page, outside the table cell that opens it**, so long addresses and item lists wrap inside the label.
+
+## Sidebar instead of the launcher (team request, local only, 2026-10-21)
+- **Always-on sidebar:** a sidebar on the left replaces the launcher page. It lists Customer (Existing / New User), Seller & Transit, each hub and each rider (grouped by hub). Clicking one shows that role's current screen. All roles share one live store, so it is always up to date.
+- **Each role remembers its last screen** (e.g. an order page, the hub's Routes tab, a rider stop), so switching back returns you there. Reset demo clears this.
+- **Live counts on the sidebar:** unread messages per customer, parcels with the seller / in transit, parcels waiting at each hub, and stops left per rider.
+- **Settings at the bottom:** Reset demo and Show feature tags. The sidebar can be collapsed to icons. "/" opens the customer phone. The old "Switch app" header icon is gone.

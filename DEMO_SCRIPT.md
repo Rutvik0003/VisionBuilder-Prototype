@@ -1,6 +1,6 @@
 # Demo video script (v2)
 
-One continuous story that covers every feature in the checklist. Press **Reset demo** (Launcher → Settings) once before you start. You never need to reset in the middle.
+One continuous story that covers every feature in the checklist. Press **Reset demo** (bottom of the sidebar) once before you start. You never need to reset in the middle.
 
 **Cast**
 - **Rekha Yadav** (Existing User): main customer, medium-risk COD buyer, 3 saved addresses.
@@ -14,18 +14,18 @@ One continuous story that covers every feature in the checklist. Press **Reset d
 **Before recording**
 - **Time of day:** record between **9 am and 9 pm**. Outside those hours Meesho's call is queued, and you'll press "9 am → place queued call".
 - **Internet:** keep the internet on, because map tiles load from OpenStreetMap.
-- **Tabs:** keep four tabs open, one per app: **Customer**, **Seller & Transit**, **Hub Manager → Hardoi LMDC**, **Rider**. Every app reads the same store, so switching tabs is instant.
+- **Switching roles:** use the sidebar on the left; no browser tabs needed. Each role reopens where you left it.
 - **Delivery OTP:** the rider screen shows "Demo: this customer's OTP is ____". Type it in, or tap **Customer reads it out**.
-- **Feature tags (optional):** Launcher → **Show feature tags** puts the IDs (C1-F1, R1…) on screen.
+- **Feature tags (optional):** Sidebar → **Show feature tags** puts the IDs (C1-F1, R1…) on screen.
 - **Rider:** whoever you see in a run plan is the rider to open. If another customer's stop comes first, deliver it (Arrived → Delivered → OTP → Confirm delivery).
 
 ---
 
 ## Part 1 · Intro (30 s)
-1. **Launcher:** "Every app is a role: customer, seller/transit, hub manager, rider. Nothing moves on a timer; each step is a button."
+1. **Sidebar:** "Every role is one click away: customer, seller/transit, hub manager, rider. Nothing moves on a timer; each step is a button."
 
 ## Part 2 · New user, catalogue and address (Kavita) · ~2 min · C3-F1, C2-F1
-2. **Launcher → New User.** The product cards show **no delivery date**, only a prompt to add an address.
+2. **Sidebar → New User.** The product cards show **no delivery date**, only a prompt to add an address.
 3. **Open "Floral Rayon Kurti"** → tap **Same item from ₹469 · 3 sellers** to show the identical-product compare sheet.
 4. **Account → Addresses → Add new address** → pincode **241001**.
    - Say: "the map opens at an approximate spot from the pincode".
@@ -84,7 +84,7 @@ One continuous story that covers every feature in the checklist. Press **Reset d
     - **Kavita's order:** "Delivered on …", on the first attempt.
 
 ## Part 7 · Doorstep layer with open-box accept (Rekha) · ~3.5 min · C2-F1, C2-F2, C2-F3, C2-F4
-24. **Launcher → Existing User → Account → Addresses:**
+24. **Sidebar → Existing User → Account → Addresses:**
     - Show the badges (**Verified by n deliveries / Pinned / Approximate**).
     - Show **Edit, Delete, Set as default and Remove pin** on a card.
 25. **Add new address (label: Shop):**
@@ -168,7 +168,7 @@ One continuous story that covers every feature in the checklist. Press **Reset d
     - **Transit:** Destination **3PL partner** → Seller ships → In transit → Reached hub.
     - **Order page:** "With our delivery partner (3PL)" with only **Yes, I'll be home**.
 60. **Rekha → Account → Language → हिंदी:** messages switch to Hindi [X5]. Switch back.
-61. **Launcher → Reset demo:** "back to a clean start, ready for the next recording".
+61. **Sidebar → Reset demo:** "back to a clean start, ready for the next recording".
 
 ---
 

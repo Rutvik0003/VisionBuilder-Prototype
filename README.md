@@ -60,7 +60,7 @@ To stop the app, press **Ctrl + C** in the terminal.
 
 ## 4. Using the prototype
 
-The first page is the **Launcher**. Pick a role:
+The app opens on the customer phone. A **sidebar** on the left is always visible: click any role to switch to its screen, already up to date. Each role reopens on the screen you last left it on, and the sidebar shows live counts (unread messages, parcels with the seller, parcels waiting at the hub, rider stops).
 
 | Tile | What it is |
 |---|---|
@@ -72,9 +72,9 @@ The first page is the **Launcher**. Pick a role:
 
 Tips:
 - **No clock:** nothing happens on a timer. Every step (ship, scan in, plan the run, call…) is a button in one of the apps.
-- **Use several tabs:** open each app in its own browser tab; they all share the same data.
-- **Reset demo** (Launcher → Settings) puts everything back to the starting data.
-- **Show feature tags** (Launcher → Settings) shows feature IDs such as `C1-F2` on screen.
+- **No tabs needed:** switch roles from the sidebar; every role shares the same data. Collapse it with « for more room.
+- **Reset demo** (bottom of the sidebar) puts everything back to the starting data.
+- **Show feature tags** (bottom of the sidebar) shows feature IDs such as `C1-F2` on screen.
 - **Delivery OTP:** the rider screen shows the customer's OTP, or tap **Customer reads it out**.
 - **Quiet hours:** confirmation calls follow your computer's clock. Between 9 pm and 9 am they are queued; press **"9 am → place queued call"** in Seller & Transit.
 
@@ -104,8 +104,8 @@ npx playwright install chromium
 
 ```
 src/
+  components/Sidebar.tsx  always-on role switcher, Reset demo, feature tags
   apps/
-    Launcher.tsx      role picker, Reset demo, settings
     customer/         customer phone app (checkout, orders, messages, IVR call, child lock…)
     transit/          Seller & Transit simulator
     hub/              Hub Manager console (tabs, run planner, redirect loop)
@@ -132,7 +132,7 @@ e2e/                  Playwright walkthroughs
 |---|---|
 | `npm` / `node` is not recognised | Install Node.js LTS, then reopen the terminal |
 | `npm install` fails | Check your internet connection. Delete the `node_modules` folder and `package-lock.json`, then run `npm install` again |
-| The page is blank or shows old data | Click **Reset demo** on the Launcher, or hard-refresh with Ctrl + Shift + R |
+| The page is blank or shows old data | Click **Reset demo** at the bottom of the sidebar, or hard-refresh with Ctrl + Shift + R |
 | Maps are grey | The map tiles need internet. Pins and DIGIPINs still work offline |
-| No incoming call after "Meesho calls" | Open the **Customer** tab. Between 9 pm and 9 am, use **"9 am → place queued call"** first |
+| No incoming call after "Meesho calls" | Open **Existing User** (or **New User**) in the sidebar. Between 9 pm and 9 am, use **"9 am → place queued call"** first |
 | Port already in use | Use the URL printed in the terminal, or stop the other server |

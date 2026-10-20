@@ -35,7 +35,7 @@ export function TransitApp() {
   ];
 
   return (
-    <DesktopShell title="Seller / Transit simulator" sub="Stands in for seller packing, first mile, sorting and line-haul." back="/">
+    <DesktopShell title="Seller / Transit simulator" sub="Stands in for seller packing, first mile, sorting and line-haul.">
       <nav className="no-scrollbar mb-3 flex gap-1 overflow-x-auto">
         {TABS.map((t) => (
           <button key={t.id} onClick={() => setParams(t.id === 'orders' ? {} : { tab: t.id })}

@@ -19,16 +19,17 @@ export function shooter(page: Page, walkthrough: string) {
   };
 }
 
-/** "Reset demo" from the launcher: every walkthrough starts from the seed. */
+/** "Reset demo" in the sidebar: every walkthrough starts from the seed. */
 export async function resetDemo(page: Page) {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Reset demo' }).click();
+  await page.getByRole('complementary', { name: 'Switch interface' }).getByRole('button', { name: 'Reset demo' }).click();
   await page.getByRole('button', { name: 'Reset', exact: true }).click();
 }
 
+/** Switch the customer phone to an account from the sidebar, then open its home screen. */
 export async function asCustomer(page: Page, who: 'Existing User' | 'New User') {
-  await page.goto('/');
-  await page.getByRole('button', { name: new RegExp(who) }).click();
+  await page.getByRole('complementary', { name: 'Switch interface' }).getByRole('button', { name: new RegExp(who) }).click();
+  await page.goto('/customer');
   await expect(page).toHaveURL(/\/customer$/);
 }
 
