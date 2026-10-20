@@ -35,6 +35,13 @@ export function confirmLines(orders: Order[]): ConfirmLine[] {
     return { key: `${o.id}:${index}`, orderId: o.id, index, productId: it.productId, title: p.title, size: it.size, qty: it.qty, amount: it.price * it.qty, seller: p.sellerName };
   }));
 }
+/** "Thu, 22 Oct" or, when the parcels come on different days, "Thu, 22 Oct and Fri, 23 Oct". */
+export function arrivalText(orders: Order[]): string {
+  const dates = [...new Set(orders.map((o) => o.slot.date))].sort();
+  return dates.map(fmtDate).join(' and ');
+}
+const lineDate = (orders: Order[], l: ConfirmLine) =>
+  (new Set(orders.map((o) => o.slot.date)).size > 1 ? ` · arrives ${fmtDate(orders.find((o) => o.id === l.orderId)!.slot.date)}` : '');
 const lineName = (l: ConfirmLine) => `${l.title}${l.size ? ` (${l.size})` : ''}${l.qty > 1 ? ` × ${l.qty}` : ''}`;
 
 // ---------------------------------------------------------------- P1.1 risk flag
@@ -94,8 +101,8 @@ function sendConfirmWhatsApp(orders: Order[]) {
   const text = lines.length === 1
     ? t('confirmMsg', s.lang, { item: lines[0].title, amount: rupees(total), when: fmtDate(lead.slot.date) })
     : t('confirmMsgMulti', s.lang, {
-      n: lines.length, amount: rupees(total), when: fmtDate(lead.slot.date),
-      list: lines.map((l) => `• ${lineName(l)} · ${rupees(l.amount)} · ${l.seller}`).join('\n'),
+      n: lines.length, amount: rupees(total), when: arrivalText(orders),
+      list: lines.map((l) => `• ${lineName(l)} · ${rupees(l.amount)} · ${l.seller}${lineDate(orders, l)}`).join('\n'),
     });
   const buttons = lines.length === 1
     ? [{ label: t('ivrConfirmBtn', s.lang), action: `ivr_confirm:${key}` }, { label: t('ivrCancelBtn', s.lang), action: `ivr_cancel:${key}` }]

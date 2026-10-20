@@ -128,27 +128,6 @@ export function refuseSomeItems(orderId: string, returnIdx: number[], reason: st
   return { ...result, childId };
 }
 
-/** Abort for safety: the parcel stays sealed with the rider; recorded as an attempt the customer can reschedule. */
-export function abortOpenBox(orderId: string) {
-  const s = get();
-  const o = findOrder(orderId);
-  const at = nowIso();
-  setOrderStatus(orderId, 'ATTEMPT_FAILED', 'Open-box stopped for safety, parcel still sealed', {
-    inspection: { ...inspectionOf(o), outcome: 'aborted' },
-    visit: { arrived: true, callsMade: 0, doorMessageSent: false, ...o.visit, outcome: 'failed' },
-    attempts: [...o.attempts, {
-      at, riderId: o.route?.riderId ?? '', arrived: true, callsMade: o.visit?.callsMade ?? 0,
-      doorMessageSent: !!o.visit?.doorMessageSent, result: 'failed', reason: 'Open-box aborted for safety',
-    }],
-  });
-  s.sendMessage({
-    customerId: o.customerId, orderId, channel: 'whatsapp', featureId: 'C2-F4',
-    text: t('attemptMsg', s.lang, { time: dayjs(at).format('h:mm A') }),
-    buttons: [{ label: t('attemptMissed', s.lang), action: `attempt_missed:${orderId}` }],
-  });
-  s.log('C2-F3', 'openbox_aborted', 'rider', {}, orderId);
-  if (o.route) refreshArriving(o.route.riderId);
-}
 
 // ---------------------------------------------------------------- hub: refusals & RTO
 

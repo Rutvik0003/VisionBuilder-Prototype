@@ -49,7 +49,7 @@ export function ProductPage() {
     return <Screen header={<PageHeader title="Product" />}><EmptyState icon={<Store />} title="Product not found" /></Screen>;
   }
 
-  const promised = address ? promisedDateFor(address) : null;
+  const promised = address ? promisedDateFor(address, [product.sellerId]) : null; // includes the seller's extra days
   const needSize = () => { if (sizes && !size) { setSizeError(true); return true; } return false; };
 
   const onAdd = () => { if (needSize()) return; addToCart(customer.id, product.id, size); showToast('Added to cart'); };

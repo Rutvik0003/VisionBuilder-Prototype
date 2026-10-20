@@ -125,7 +125,14 @@ export function Checkout() {
   useEffect(() => { if (draft && !draft.addressId && deliverTo) updateCheckout({ addressId: deliverTo.id }); }, [draft, deliverTo]);
 
   const address = draft ? addresses.find((a) => a.id === draft.addressId) : undefined;
-  const promised = address ? promisedDateFor(address) : null;
+  const draftLines = lineItems(draft?.items ?? []);
+  const sellerIds = [...new Set(draftLines.map((l) => l.product.sellerId))];
+  const promised = address ? promisedDateFor(address, sellerIds) : null; // the latest seller's ready date
+  // One parcel per seller, each with its own ready date (some sellers need an extra day)
+  const parts = address ? sellerIds.map((sellerId) => {
+    const items = draftLines.filter((l) => l.product.sellerId === sellerId);
+    return { sellerId, sellerName: items[0].product.sellerName, items, ready: promisedDateFor(address, [sellerId]) };
+  }) : [];
   const pilot = !!address?.hubId;
   const slot = draft?.slot ?? (promised ? { date: promised, window: 'Any time' as SlotLabel } : undefined);
 
@@ -149,6 +156,9 @@ export function Checkout() {
   const summary = priceSummary(draft.items, draft.payment);
   const hold = holds.find((h) => h.id === draft.holdId && h.expiresAt > Date.now());
   const dates = promised ? slotDates(promised) : [];
+  const differentDays = pilot && new Set(parts.map((p) => p.ready)).size > 1;
+  const mode = differentDays ? draft.deliveryMode ?? 'together' : 'together';
+  const partSlot = (p: (typeof parts)[number]) => draft.partSlots?.[p.sellerId] ?? { date: p.ready, window: 'Any time' as SlotLabel };
 
   const go = (s: CheckoutStep) => updateCheckout({ step: s });
 
@@ -177,8 +187,45 @@ export function Checkout() {
     setSlot(date, 'Any time');
   };
 
+  // ---- "deliver each when ready": one slot per parcel ----
+  const setPartSlot = (sellerId: string, date: string, window: SlotLabel) => {
+    const cur = draft.partSlots?.[sellerId];
+    let holdId: string | undefined;
+    if (window === 'Any time') releaseHold(cur?.holdId);
+    else {
+      const h = placeHold(address!.hubId!, date, window, cur?.holdId);
+      if (!h) { log('C1-F1', 'slot_full_seen', 'customer', { date, window }); showToast(t('slotJustFilled')); return false; }
+      holdId = h.id;
+    }
+    updateCheckout({ partSlots: { ...useStore.getState().checkout?.partSlots, [sellerId]: { date, window, holdId } } });
+    return true;
+  };
+  const pickPartDate = (p: (typeof parts)[number], date: string) => {
+    const cur = partSlot(p);
+    if (cur.window !== 'Any time' && setPartSlot(p.sellerId, date, cur.window)) return;
+    setPartSlot(p.sellerId, date, 'Any time');
+  };
+  const chooseMode = (m: 'together' | 'separate') => {
+    if (m === mode) return;
+    if (m === 'separate') {
+      releaseHold(draft.holdId);
+      const from = (d: string) => (draft.deliverOnOrAfter && draft.deliverOnOrAfter > d ? draft.deliverOnOrAfter : d);
+      updateCheckout({
+        deliveryMode: m, holdId: undefined, slot: { date: promised!, window: 'Any time' },
+        partSlots: Object.fromEntries(parts.map((p) => [p.sellerId, { date: from(p.ready), window: 'Any time' as SlotLabel }])),
+      });
+    } else {
+      Object.values(draft.partSlots ?? {}).forEach((x) => releaseHold(x.holdId));
+      updateCheckout({ deliveryMode: m, partSlots: undefined });
+    }
+    log('C1-F1', 'delivery_mode_chosen', 'customer', { mode: m, parcels: parts.length });
+  };
+
   const pickCashDay = (day?: string) => {
     updateCheckout({ deliverOnOrAfter: day });
+    if (day && mode === 'separate') {
+      for (const p of parts) if (partSlot(p).date < day) { const w = partSlot(p).window; if (!(w !== 'Any time' && setPartSlot(p.sellerId, day, w))) setPartSlot(p.sellerId, day, 'Any time'); }
+    }
     if (day && slot && slot.date < day) {
       if (!(slot.window !== 'Any time' && setSlot(day, slot.window))) setSlot(day, 'Any time');
       showToast(t('cashDayMoved', { date: fmtDate(day) }));
@@ -205,6 +252,7 @@ export function Checkout() {
         const orders = await placeOrder({
           customerId: customer.id, items: draft.items, address: address!, payment: draft.payment!, fromCart: draft.source === 'cart',
           slot, holdId: draft.holdId, deliverOnOrAfter: draft.deliverOnOrAfter, openBox,
+          deliveryMode: mode, partSlots: mode === 'separate' ? Object.fromEntries(parts.map((p) => [p.sellerId, partSlot(p)])) : undefined,
         });
         afterOrderPlaced(orders.map((o) => o.id)); // one confirmation for the whole checkout
         nav(`/customer/order-placed/${orders[0].id}`, { replace: true });
@@ -256,7 +304,8 @@ export function Checkout() {
               <AddressCard key={a.id} a={a} selected={a.id === draft.addressId} onSelect={() => {
                 if (a.id === draft.addressId) return;
                 releaseHold(draft.holdId); // a different address may be a different hub
-                updateCheckout({ addressId: a.id, slot: undefined, holdId: undefined });
+                Object.values(draft.partSlots ?? {}).forEach((x) => releaseHold(x.holdId));
+                updateCheckout({ addressId: a.id, slot: undefined, holdId: undefined, partSlots: undefined, deliveryMode: undefined });
               }} />
             ))}
           </section>
@@ -270,14 +319,58 @@ export function Checkout() {
                   <div className="flex items-center gap-2 text-[16px] font-bold">{t('slotTitle')} <FeatureTag id="C1-F1" /></div>
                   <div className="text-[12px] text-ink-muted">{t('slotSub')}</div>
                 </div>
-                <SlotPicker hubId={address!.hubId!} dates={dates} value={slot} ignoreHoldId={draft.holdId} resetOnFull={false}
-                  onPickDate={pickDate} onPickWindow={(w) => setSlot(slot.date, w)}
-                  onFull={(date, window) => { log('C1-F1', 'slot_full_seen', 'customer', { date, window }); showToast(`${window} is full on ${fmtDate(date)}`); }} />
-                {hold && <HoldTimer key={hold.id} expiresAt={hold.expiresAt} onExpire={() => {
-                  releaseHold(hold.id); updateCheckout({ holdId: undefined }); setHoldExpired(true);
-                  log('C1-F1', 'slot_expired', 'system', { date: hold.date, window: hold.window });
-                }} />}
-                {holdExpired && !hold && <div className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{t('slotExpired')}</div>}
+                {differentDays && (
+                  <div className="space-y-2 rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+                    <div className="text-[13px] font-semibold text-sky-900">Your items are ready on different days</div>
+                    <div className="space-y-1 text-[12px] text-sky-900">
+                      {parts.map((p) => (
+                        <div key={p.sellerId} className="flex gap-2">
+                          <span className="min-w-0 flex-1 truncate">{p.items.map((l) => l.product.title).join(' + ')} <span className="text-sky-700">· {p.sellerName}</span></span>
+                          <span className="shrink-0 font-semibold">from {fmtDate(p.ready)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 pt-1">
+                      <ModeOption selected={mode === 'together'} onClick={() => chooseMode('together')}
+                        title="Deliver together" badge="Recommended"
+                        sub={`One visit on ${fmtDate(promised)} or later. One OTP, one time to be at home.`} />
+                      <ModeOption selected={mode === 'separate'} onClick={() => chooseMode('separate')}
+                        title="Deliver each when ready"
+                        sub={`${parts.length} visits: get each parcel sooner. Pick a time for each.`} />
+                    </div>
+                  </div>
+                )}
+                {mode === 'together' ? (
+                  <>
+                    <SlotPicker hubId={address!.hubId!} dates={dates} value={slot} ignoreHoldId={draft.holdId} resetOnFull={false}
+                      onPickDate={pickDate} onPickWindow={(w) => setSlot(slot.date, w)}
+                      onFull={(date, window) => { log('C1-F1', 'slot_full_seen', 'customer', { date, window }); showToast(`${window} is full on ${fmtDate(date)}`); }} />
+                    {hold && <HoldTimer key={hold.id} expiresAt={hold.expiresAt} onExpire={() => {
+                      releaseHold(hold.id); updateCheckout({ holdId: undefined }); setHoldExpired(true);
+                      log('C1-F1', 'slot_expired', 'system', { date: hold.date, window: hold.window });
+                    }} />}
+                    {holdExpired && !hold && <div className="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-800">{t('slotExpired')}</div>}
+                  </>
+                ) : (
+                  parts.map((p, i) => {
+                    const ps = partSlot(p);
+                    const ph = holds.find((h) => h.id === ps.holdId && h.expiresAt > Date.now());
+                    return (
+                      <div key={p.sellerId} className="space-y-2 border-t border-gray-100 pt-3">
+                        <div className="text-[13px] font-semibold">Parcel {i + 1} · {p.sellerName}</div>
+                        <div className="-mt-1 truncate text-[12px] text-ink-muted">{p.items.map((l) => l.product.title).join(' + ')} · ready from {fmtDate(p.ready)}</div>
+                        <SlotPicker hubId={address!.hubId!} dates={slotDates(p.ready)} value={ps} ignoreHoldId={ps.holdId} resetOnFull={false}
+                          onPickDate={(d) => pickPartDate(p, d)} onPickWindow={(w) => setPartSlot(p.sellerId, ps.date, w)}
+                          onFull={(date, window) => { log('C1-F1', 'slot_full_seen', 'customer', { date, window }); showToast(`${window} is full on ${fmtDate(date)}`); }} />
+                        {ph && <HoldTimer key={ph.id} expiresAt={ph.expiresAt} onExpire={() => {
+                          releaseHold(ph.id);
+                          updateCheckout({ partSlots: { ...useStore.getState().checkout?.partSlots, [p.sellerId]: { date: ps.date, window: ps.window } } });
+                          setHoldExpired(true);
+                        }} />}
+                      </div>
+                    );
+                  })
+                )}
               </section>
 
             </>
@@ -350,10 +443,18 @@ export function Checkout() {
             </section>
             <section className="bg-white px-4 py-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-sm font-semibold"><CalendarDays size={15} className="text-brand" /> {pilot ? slotLine : `Arriving by ${fmtDate(promised)}`}</div>
+                <div className="flex items-center gap-1.5 text-sm font-semibold"><CalendarDays size={15} className="text-brand" /> {mode === 'separate' ? `${parts.length} deliveries` : pilot ? slotLine : `Arriving by ${fmtDate(promised)}`}</div>
                 {pilot && <button className="text-xs font-semibold text-brand" onClick={() => go('delivery')}>Change</button>}
               </div>
-              {hold && <div className="mt-1 text-[11px] text-success">Slot held for you</div>}
+              {mode === 'separate' && (
+                <div className="mt-1 space-y-0.5 text-[12px]">
+                  {parts.map((p, i) => {
+                    const ps = partSlot(p);
+                    return <div key={p.sellerId}>Parcel {i + 1} · {p.sellerName}: <b>{fmtDate(ps.date)} · {ps.window}</b></div>;
+                  })}
+                </div>
+              )}
+              {hold && mode === 'together' && <div className="mt-1 text-[11px] text-success">Slot held for you</div>}
               {draft.payment === 'COD' && draft.deliverOnOrAfter && <div className="mt-0.5 text-[12px] text-ink-muted">Cash ready from {fmtDate(draft.deliverOnOrAfter)}</div>}
             </section>
             {bestPrice.length > 0 && (
@@ -364,7 +465,7 @@ export function Checkout() {
             {new Set(lines.map((l) => l.product.sellerId)).size > 1 && (
               <section className="flex items-start gap-2 bg-sky-50 px-4 py-2.5 text-[13px] text-sky-900">
                 <Truck size={16} className="mt-0.5 shrink-0" />
-                <span>These items are from {new Set(lines.map((l) => l.product.sellerId)).size} sellers, so they come as {new Set(lines.map((l) => l.product.sellerId)).size} parcels, together on the same day. You confirm them once.</span>
+                <span>These items are from {parts.length} sellers, so they come as {parts.length} parcels{mode === 'separate' ? ', each on its own day as you chose' : ', together on the same day'}. You confirm them once.</span>
               </section>
             )}
             {openBox && (
@@ -394,5 +495,21 @@ export function Checkout() {
       </div>
       {gate}
     </Screen>
+  );
+}
+
+/** One choice in "Your items are ready on different days". */
+function ModeOption({ selected, onClick, title, sub, badge }: { selected: boolean; onClick: () => void; title: string; sub: string; badge?: string }) {
+  return (
+    <button onClick={onClick} aria-pressed={selected}
+      className={`flex w-full items-start gap-2.5 rounded-lg border bg-white p-2.5 text-left transition ${selected ? 'border-brand ring-1 ring-brand' : 'border-gray-200'}`}>
+      <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 ${selected ? 'border-brand' : 'border-gray-300'}`}>
+        {selected && <span className="h-2 w-2 rounded-full bg-brand" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 text-[13px] font-semibold">{title}{badge && <span className="chip bg-emerald-50 !text-[10px] text-success">{badge}</span>}</span>
+        <span className="block text-[12px] text-ink-muted">{sub}</span>
+      </span>
+    </button>
   );
 }

@@ -151,6 +151,7 @@ export const STRINGS = {
   ivrAllConfirmed: { en: 'Thank you! All {n} items are confirmed.', hi: 'धन्यवाद! सभी {n} आइटम पक्के हो गए।' },
   ivrAllCancelled: { en: 'All {n} items have been cancelled. Nothing to pay.', hi: 'सभी {n} आइटम रद्द हो गए। कुछ नहीं देना है।' },
   confirmPlacedMulti: { en: 'Your items come from {n} sellers, so they ship as {n} parcels and arrive together on the same day. We’ll ask you to confirm them once on WhatsApp; if we can’t reach you, Meesho will call once in ~10 min.', hi: 'आपके आइटम {n} विक्रेताओं से हैं, इसलिए {n} पार्सल में आएँगे और एक ही दिन साथ पहुँचेंगे। हम WhatsApp पर एक बार पुष्टि माँगेंगे; संपर्क न होने पर मीशो ~10 मिनट में एक बार कॉल करेगा।' },
+  confirmPlacedSplit: { en: 'Your items come from {n} sellers and arrive on different days, as you chose: {dates}. We’ll ask you to confirm them once on WhatsApp; if we can’t reach you, Meesho will call once in ~10 min.', hi: 'आपके आइटम {n} विक्रेताओं से हैं और आपकी पसंद के अनुसार अलग-अलग दिन आएँगे: {dates}। हम WhatsApp पर एक बार पुष्टि माँगेंगे; संपर्क न होने पर मीशो ~10 मिनट में एक बार कॉल करेगा।' },
   confirmPlaced: { en: 'We’ll confirm on WhatsApp; if we can’t reach you, Meesho will call in ~10 min.', hi: 'हम WhatsApp पर पुष्टि करेंगे; अगर संपर्क नहीं हुआ तो मीशो ~10 मिनट में कॉल करेगा।' },
   neverReachedHigh: { en: 'We couldn’t reach you to confirm your order ({ids}). Pay by UPI to ship now, or cancel at no cost.', hi: 'आपके ऑर्डर ({ids}) की पुष्टि के लिए हम आपसे संपर्क नहीं कर सके। अभी भेजने के लिए UPI से भुगतान करें, या मुफ़्त में रद्द करें।' },
   payUpiShip: { en: 'Pay by UPI to ship now', hi: 'अभी भेजने के लिए UPI से भुगतान करें' },
@@ -193,7 +194,7 @@ export type StringKey = keyof typeof STRINGS;
 
 export function t(key: StringKey, lang: 'en' | 'hi', vars: Record<string, string | number> = {}): string {
   let s: string = STRINGS[key][lang];
-  for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v));
+  for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v)); // every occurrence, e.g. "{n} sellers … {n} parcels"
   return s;
 }
 

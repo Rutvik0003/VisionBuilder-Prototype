@@ -8,7 +8,7 @@ import { FeatureTag } from '../../components/FeatureTag';
 import { homeYes } from '../../services/flow';
 import { dropSiblings } from '../../services/orders';
 import {
-  applyConfirmChoices, cancelUnconfirmed, canCancelUnshipped, confirmCallMissed, confirmGroup, confirmLines, confirmOrder, endCall,
+  applyConfirmChoices, arrivalText, cancelUnconfirmed, canCancelUnshipped, confirmCallMissed, confirmGroup, confirmLines, confirmOrder, endCall,
 } from '../../services/ivr';
 
 type Phase = 'ringing' | 'menu' | 'items' | 'ended';
@@ -91,7 +91,7 @@ function CallScreen({ orderId, kind, onClosed }: { orderId: string; kind: 'confi
         ? t('ivrScriptVaani', { when: fmtDate(order.slot.date) })
         : multi
           ? t('ivrScriptConfirmMulti', {
-            name: customer.name.split(' ')[0], n: items.length, when: fmtDate(order.slot.date),
+            name: customer.name.split(' ')[0], n: items.length, when: arrivalText(group),
             amount: rupees(group.reduce((a, o) => a + o.total, 0)), list: items.map((_, i) => `${itemName(i)} for ${rupees(items[i].amount)}`).join(', '),
           })
           : t('ivrScriptConfirm', { name: customer.name.split(' ')[0], item: product.title, amount: rupees(order.total), when: fmtDate(order.slot.date) }),

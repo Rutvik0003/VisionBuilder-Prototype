@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import { customAlphabet } from 'nanoid';
 import { useStore } from '../store';
-import type { Address, CartItem, Hub, Order, OrderStatus, Payment, RescueScore } from '../types';
+import type { Address, CartItem, Hub, Order, OrderStatus, Payment, RescueScore, SlotLabel } from '../types';
 import { latency } from './api';
 import { nowIso } from '../lib/time';
 import { clusterInfo, openBoxEligible } from './catalog';
@@ -15,9 +15,13 @@ export const UPI_DISCOUNT = 15;
 /** Days from order to promised delivery, by hub tier; non-pilot addresses ship via 3PL (+5 days). */
 const PROMISE_DAYS: Record<Hub['tier'], number> = { metro: 2, tier2: 3, tier3: 3 };
 
-export function promisedDateFor(address: Pick<Address, 'hubId'>, now = nowIso()): string {
+/** Extra days a seller needs before the parcel can reach the hub (e.g. ships from further away). */
+export const SELLER_EXTRA_DAYS: Record<string, number> = { S_STEELKING: 1, S_PANIPAT: 1 };
+
+/** Promised delivery date to this address; with sellers, the latest of their ready dates. */
+export function promisedDateFor(address: Pick<Address, 'hubId'>, sellerIds: string[] = [], now = nowIso()): string {
   const hub = useStore.getState().hubs.find((h) => h.id === address.hubId);
-  const days = hub ? PROMISE_DAYS[hub.tier] : 5;
+  const days = (hub ? PROMISE_DAYS[hub.tier] : 5) + Math.max(0, ...sellerIds.map((id) => SELLER_EXTRA_DAYS[id] ?? 0));
   return dayjs(now).add(days, 'day').format('YYYY-MM-DD');
 }
 
@@ -63,36 +67,53 @@ export class SlotUnavailableError extends Error {}
 
 /**
  * Place a checkout. Items from the same seller travel as one order (one parcel); items from different sellers
- * become one order per seller, linked by `groupId`. A group is confirmed together (one WhatsApp, one call),
- * shares one delivery slot and one delivery OTP, and is delivered together at the door.
+ * become one order per seller, linked by `groupId`. A group is confirmed together (one WhatsApp, one call) and
+ * shares one delivery OTP. Delivery: "together" (default) = one slot for every parcel, on or after the latest
+ * seller's ready date; "separate" = each parcel gets its own slot (`partSlots`), from its own ready date.
  * Returns the orders, the first one being the group's lead.
  */
 export async function placeOrder(input: {
   customerId: Order['customerId']; items: CartItem[]; address: Address; payment: Payment; fromCart: boolean;
   slot?: Order['slot']; holdId?: string; deliverOnOrAfter?: string; openBox?: boolean;
+  deliveryMode?: 'together' | 'separate'; partSlots?: Record<string, { date: string; window: SlotLabel; holdId?: string }>;
 }): Promise<Order[]> {
   return latency(() => {
     const s = useStore.getState();
     const customer = s.customers.find((c) => c.id === input.customerId)!;
     const lines = lineItems(input.items);
-    const promisedDate = promisedDateFor(input.address);
-    // C1-F1: slots only exist for pilot hubs; elsewhere it's the promised date, any time.
-    const slot = input.address.hubId && input.slot ? input.slot : { date: promisedDate, window: 'Any time' as const };
-
     // One order per seller, in the order the items appear
     const sellers = [...new Set(lines.map((l) => l.product.sellerId))];
     const parts = sellers.map((sellerId) => lines.filter((l) => l.product.sellerId === sellerId));
+    const hubId = input.address.hubId;
+    const together = input.deliveryMode !== 'separate' || !hubId || parts.length < 2;
+    const latest = promisedDateFor(input.address, sellers);
+    // C1-F1: slots only exist for pilot hubs; elsewhere it's the promised date, any time.
+    const shared: Order['slot'] = hubId && input.slot ? input.slot : { date: latest, window: 'Any time' };
+    const plan = sellers.map((sellerId) => {
+      const ready = promisedDateFor(input.address, [sellerId]);
+      const own = input.partSlots?.[sellerId];
+      return together
+        ? { slot: shared, holdId: undefined as string | undefined, promisedDate: latest }
+        : { slot: own ? { date: own.date, window: own.window } : { date: ready, window: 'Any time' as SlotLabel }, holdId: own?.holdId, promisedDate: ready };
+    });
 
-    // Every parcel takes a seat in the window: check there is room for all of them before booking any.
-    if (input.address.hubId && slot.window !== 'Any time' && parts.length > 1
-      && availability(s, input.address.hubId, slot.date, slot.window, input.holdId).left < parts.length) {
-      throw new SlotUnavailableError(`${slot.window} on ${slot.date} has no room for ${parts.length} parcels`);
-    }
-    if (input.address.hubId && !confirmSlot(input.address.hubId, slot.date, slot.window, input.holdId)) {
-      throw new SlotUnavailableError(`${slot.window} on ${slot.date} just filled up`);
-    }
-    for (let i = 1; i < parts.length; i++) {
-      if (input.address.hubId) confirmSlot(input.address.hubId, slot.date, slot.window);
+    if (hubId) {
+      // Every parcel takes a seat in its window: check there is room for all of them before booking any.
+      const need = new Map<string, { date: string; window: SlotLabel; n: number; held: number }>();
+      plan.forEach((p, i) => {
+        if (p.slot.window === 'Any time') return;
+        const k = `${p.slot.date}|${p.slot.window}`;
+        const cur = need.get(k) ?? { date: p.slot.date, window: p.slot.window, n: 0, held: 0 };
+        cur.n += 1;
+        if (together ? i === 0 && !!input.holdId : !!p.holdId) cur.held += 1; // our own held seat already counts as used
+        need.set(k, cur);
+      });
+      for (const w of need.values()) {
+        if (availability(s, hubId, w.date, w.window as Exclude<SlotLabel, 'Any time'>).left + w.held < w.n) {
+          throw new SlotUnavailableError(`${w.window} on ${w.date} has no room for ${w.n} parcel${w.n > 1 ? 's' : ''}`);
+        }
+      }
+      plan.forEach((p, i) => { confirmSlot(hubId, p.slot.date, p.slot.window, together ? (i === 0 ? input.holdId : undefined) : p.holdId); });
     }
 
     const deliveryOtp = String(1000 + Math.floor(Math.random() * 9000)); // D1.8: one OTP for the whole door drop
@@ -112,8 +133,8 @@ export async function placeOrder(input: {
         payment: input.payment,
         addressId: input.address.id,
         hubId: input.address.hubId,
-        promisedDate,
-        slot,
+        promisedDate: plan[i].promisedDate,
+        slot: plan[i].slot,
         deliverOnOrAfter: input.payment === 'COD' ? input.deliverOnOrAfter : undefined,
         openBox,
         status: 'PLACED',
@@ -139,11 +160,11 @@ export async function placeOrder(input: {
     }));
     if (groupId) s.log('CORE', 'order_split_by_seller', 'system', { orders: ids, sellers: sellers.length }, groupId);
     for (const order of orders) {
-      s.log('CORE', 'order_placed', 'customer', { total: order.total, payment: input.payment, hubId: order.hubId, promisedDate, groupId: groupId ?? null }, order.id);
+      s.log('CORE', 'order_placed', 'customer', { total: order.total, payment: input.payment, hubId: order.hubId, promisedDate: order.promisedDate, mode: together ? 'together' : 'separate', groupId: groupId ?? null }, order.id);
       s.log('C3-F2', 'rescue_scored', 'system', { trigger: 'place_order', pRto: order.rescue.pRto, band: order.rescue.band, topReason: order.rescue.topReason }, order.id);
       if (order.rescue.holdout) s.log('C3-F2', 'holdout_assigned', 'system', {}, order.id);
       if (order.hubId) {
-        s.log('C1-F1', 'slot_confirmed', 'system', { date: slot.date, window: slot.window }, order.id);
+        s.log('C1-F1', 'slot_confirmed', 'system', { date: order.slot.date, window: order.slot.window }, order.id);
         if (order.deliverOnOrAfter) s.log('C1-F1', 'cod_date_selected', 'customer', { deliverOnOrAfter: order.deliverOnOrAfter }, order.id);
       }
       if (order.openBox) s.log('C2-F3', 'openbox_order_placed', 'system', {}, order.id);

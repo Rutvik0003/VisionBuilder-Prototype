@@ -17,6 +17,7 @@ export function OrderPlaced() {
   const group = order.groupId ? allOrders.filter((o) => o.groupId === order.groupId) : [order];
   const total = group.reduce((a, o) => a + o.total, 0);
   const multi = group.length > 1;
+  const sameDay = new Set(group.map((o) => o.slot.date)).size === 1;
 
   return (
     <Screen
@@ -39,8 +40,8 @@ export function OrderPlaced() {
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-success"><Truck size={19} /></span>
           <div>
-            <div className="text-[12px] text-ink-muted">{order.hubId ? (multi ? 'Your delivery slot (all parcels together)' : 'Your delivery slot') : 'Arriving by'}</div>
-            <div className="font-semibold">{deliveryWhen(order)}{order.hubId && order.slot.window === 'Any time' ? ' · Any time' : ''}</div>
+            <div className="text-[12px] text-ink-muted">{order.hubId ? (multi ? (sameDay ? 'Your delivery slot (all parcels together)' : `${group.length} deliveries, as you chose`) : 'Your delivery slot') : 'Arriving by'}</div>
+            <div className="font-semibold">{sameDay ? <>{deliveryWhen(order)}{order.hubId && order.slot.window === 'Any time' ? ' · Any time' : ''}</> : group.map((o) => fmtDate(o.slot.date)).join(' and ')}</div>
             {order.deliverOnOrAfter && <div className="text-[12px] text-ink-muted">Cash ready from {fmtDate(order.deliverOnOrAfter)}</div>}
           </div>
         </div>
@@ -54,6 +55,7 @@ export function OrderPlaced() {
                   <div className="min-w-0 flex-1 text-[13px]">
                     <div className="flex items-center gap-1 font-medium"><Package size={13} className="text-brand" /> Parcel {i + 1} · {p.sellerName}</div>
                     <div className="truncate text-[12px] text-ink-muted">{o.items.map((it) => products.find((x) => x.id === it.productId)?.title).join(', ')}</div>
+                    {!sameDay && <div className="text-[11px] font-medium text-success">{fmtDate(o.slot.date)} · {o.slot.window}</div>}
                   </div>
                   <span className="text-sm font-semibold">{rupees(o.total)}</span>
                 </Link>
@@ -68,11 +70,11 @@ export function OrderPlaced() {
       </div>
       {order.confirm && (
         <div className="mx-3 mt-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[13px] text-amber-900">
-          <MessageCircle size={16} className="mt-0.5 shrink-0" /> {multi ? t('confirmPlacedMulti', { n: group.length }) : t('confirmPlaced')}
+          <MessageCircle size={16} className="mt-0.5 shrink-0" /> {multi ? (sameDay ? t('confirmPlacedMulti', { n: group.length }) : t('confirmPlacedSplit', { n: group.length, dates: group.map((o) => fmtDate(o.slot.date)).join(' and ') })) : t('confirmPlaced')}
         </div>
       )}
       {!order.confirm && multi && (
-        <div className="mx-3 mt-3 rounded-xl bg-sky-50 p-3 text-[13px] text-sky-900">Your items come from {group.length} sellers, so they ship as {group.length} parcels and arrive together.</div>
+        <div className="mx-3 mt-3 rounded-xl bg-sky-50 p-3 text-[13px] text-sky-900">Your items come from {group.length} sellers, so they ship as {group.length} parcels{sameDay ? ' and arrive together' : ', each on its own day'}.</div>
       )}
       <p className="mx-6 mt-4 text-center text-[11px] text-ink-muted">Next in the demo: open <b>Seller &amp; Transit</b> in the sidebar{order.confirm ? ' once the order is confirmed' : ''}.</p>
     </Screen>

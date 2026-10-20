@@ -291,6 +291,9 @@ export interface CheckoutDraft {
   holdId?: string; // active 10-minute slot hold
   deliverOnOrAfter?: string; // COD cash day
   openBox?: boolean; // customer opted in to open-box delivery (C2-F3)
+  /** Sellers ready on different days: deliver everything together (on the later day) or each parcel when it's ready. */
+  deliveryMode?: 'together' | 'separate';
+  partSlots?: Record<string, { date: string; window: SlotLabel; holdId?: string }>; // per seller, "separate" mode only
 }
 
 /** A 10-minute checkout hold on one slot window (counts against capacity until it expires or confirms). */

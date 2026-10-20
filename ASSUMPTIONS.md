@@ -311,3 +311,15 @@ _This section supersedes the earlier "IVR order confirmation" notes._
 - **Each role remembers its last screen** (e.g. an order page, the hub's Routes tab, a rider stop), so switching back returns you there. Reset demo clears this.
 - **Live counts on the sidebar:** unread messages per customer, parcels with the seller / in transit, parcels waiting at each hub, and stops left per rider.
 - **Settings at the bottom:** Reset demo and Show feature tags. The sidebar can be collapsed to icons. "/" opens the customer phone. The old "Switch app" header icon is gone.
+
+## Sellers ready on different days (team request, 2026-10-21)
+- **Seller ready dates:** sellers can need extra days before their parcel reaches the hub (prototype: Steel King and Panipat Home Mills +1 day). The product page shows that seller's own date.
+- **When a cart's sellers are ready on different days**, checkout's Delivery step lists each parcel with its "from" date and offers two choices:
+  - **Deliver together** (default, recommended): one visit on or after the later date, one slot, one OTP, one time to be at home.
+  - **Deliver each when ready:** a slot picker per parcel, each starting at that parcel's own ready date. Each slot is held separately.
+- **Cash day:** the COD "When will you have the money?" day moves any earlier parcel slot to that day.
+- **Confirmation is still once per checkout.** When parcels come on different days, the WhatsApp and the call say "arriving Sat, 24 Oct and Sun, 25 Oct" and mark each item's day. The order-placed page shows each parcel's slot.
+- **Fixed:** message templates now fill every placeholder (e.g. "{n} sellers … {n} parcels").
+
+## Open-box: Abort for safety removed (team request, 2026-10-21)
+- **Abort for safety is gone:** the open-box check no longer has an "Abort for safety" button. At the door the rider either completes the check (accept, refuse, or return some items) or uses the normal attempt buttons on the stop screen.

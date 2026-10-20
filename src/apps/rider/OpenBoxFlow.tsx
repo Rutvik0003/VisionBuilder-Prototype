@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../../store';
 import dayjs from 'dayjs';
-import { Camera, Check, CircleCheck, OctagonAlert, PackageX, ScanLine, ShieldAlert, Timer, Undo2 } from 'lucide-react';
+import { Camera, Check, CircleCheck, PackageX, ScanLine, ShieldAlert, Timer, Undo2 } from 'lucide-react';
 import type { Order } from '../../types';
 import { rupees } from '../../lib/format';
 import { useNow } from '../../lib/time';
@@ -9,7 +9,7 @@ import { useUi } from '../../store/ui';
 import { FeatureTag } from '../../components/FeatureTag';
 import {
   CHECKLIST, HARD_STOP_SECONDS, INSPECTION_SECONDS, REFUSAL_REASONS,
-  abortOpenBox, acceptAfterInspection, refuseAfterInspection, refuseSomeItems, startInspection, takeSealPhoto, toggleCheck,
+  acceptAfterInspection, refuseAfterInspection, refuseSomeItems, startInspection, takeSealPhoto, toggleCheck,
 } from '../../services/openbox';
 import { sameStop } from '../../services/delivery';
 
@@ -25,7 +25,6 @@ export function OpenBoxFlow({ order, onDone, onBack }: { order: Order; onDone: (
   const [damaged, setDamaged] = useState(false);
   const [itemPhoto, setItemPhoto] = useState(false);
   const [result, setResult] = useState<{ sealId: string; redirectEligible: boolean } | null>(null);
-  const [confirmAbort, setConfirmAbort] = useState(false);
   const [otp, setOtp] = useState('');
   const [sealId, setSealId] = useState('');
   const multi = order.items.length > 1;
@@ -189,18 +188,6 @@ export function OpenBoxFlow({ order, onDone, onBack }: { order: Order; onDone: (
         </div>
       )}
 
-      {/* Always available */}
-      {!confirmAbort ? (
-        <button className="flex w-full items-center justify-center gap-1.5 pt-1 text-xs font-semibold text-danger" onClick={() => setConfirmAbort(true)}>
-          <OctagonAlert size={14} /> Abort for safety
-        </button>
-      ) : (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 p-2 text-xs">
-          <span className="flex-1">Leave with the parcel sealed? The customer can pick a new time.</span>
-          <button className="btn-ghost !py-1 text-xs" onClick={() => setConfirmAbort(false)}>No</button>
-          <button className="btn bg-danger !py-1 text-xs text-white" onClick={() => { abortOpenBox(order.id); onDone(); }}>Abort</button>
-        </div>
-      )}
     </div>
   );
 }

@@ -105,7 +105,6 @@ One continuous story that covers every feature in the checklist. Press **Reset d
     - **Take seal photo → Start inspection (2:00 timer)**.
     - Point out that **Customer accepts** stays locked until all **5 checks** are ticked.
     - Tick all 5 → enter the **OTP** → **Customer accepts · collect ₹499**.
-    - Point out **Abort for safety** at the bottom.
 33. **Rekha → Account → Addresses:** Shop now shows **"Verified by 1 delivery"**. An OTP delivery within 30 m of the pin verifies it at once [D1.8].
 
 ## Part 8 · Open-box refusal → back to the seller · ~2 min · C2-F3
