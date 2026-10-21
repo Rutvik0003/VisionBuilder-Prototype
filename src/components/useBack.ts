@@ -1,13 +1,16 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useStore } from '../store';
+import { sectionOf, stepBack } from '../lib/interfaceHistory';
 
-/** Back goes to the previous screen in this app; with no history it goes to the app's home. */
+/**
+ * Back goes to the previous screen of THIS interface (customer, seller, a hub, a rider), never to another
+ * interface you visited in between via the sidebar. With nothing earlier in this interface it goes to its home.
+ */
 export function useBack(fallback: string) {
   const nav = useNavigate();
-  const location = useLocation();
   return () => {
-    // react-router stores its own history index; 0 means this is the first entry of the session
-    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
-    if (idx > 0 && location.key !== 'default') nav(-1);
-    else nav(fallback);
+    const section = sectionOf(window.location.pathname, useStore.getState().account);
+    const prev = section ? stepBack(section) : undefined;
+    nav(prev ?? fallback);
   };
 }

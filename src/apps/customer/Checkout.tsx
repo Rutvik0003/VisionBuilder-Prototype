@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useBack } from '../../components/useBack';
 import dayjs from 'dayjs';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import {
@@ -113,6 +114,7 @@ export function Checkout() {
   const log = useStore((s) => s.log);
   const showToast = useUi((s) => s.showToast);
   const nav = useNavigate();
+  const leaveCheckout = useBack('/customer/cart'); // back inside the customer app only (a hook: keep above early returns)
   const t = useT();
   const [placing, setPlacing] = useState(false);
   const [holdExpired, setHoldExpired] = useState(false);
@@ -268,7 +270,7 @@ export function Checkout() {
 
   const back = () => {
     const i = STEPS.findIndex((s) => s.id === step);
-    if (i === 0) nav(-1); else go(STEPS[i - 1].id);
+    if (i === 0) leaveCheckout(); else go(STEPS[i - 1].id);
   };
 
   const slotLine = slot ? `${fmtDate(slot.date)} · ${slot.window === 'Any time' ? 'Any time' : slot.window}` : '';

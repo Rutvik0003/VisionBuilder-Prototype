@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
+import { clearInterfaceHistory, lastVisit, recordVisit, sectionOf } from '../lib/interfaceHistory';
 import { useShallow } from 'zustand/react/shallow';
 import { Bike, Building2, ChevronsLeft, ChevronsRight, RotateCcw, Tag, Truck, UserPlus, UserRound } from 'lucide-react';
 import { useStore } from '../store';
@@ -8,24 +9,13 @@ import { pendingStops } from '../services/delivery';
 
 // Always-on switcher between the stakeholder interfaces (replaces the Launcher page).
 // Every app reads the same live store, so switching shows that interface's up-to-date screen.
-// Each interface remembers the screen you were last on (e.g. an order page, a rider stop), so you return to it.
+// Each interface keeps its own history (src/lib/interfaceHistory): switching reopens its last screen, and the
+// in-app back arrow steps back inside the interface you're in, never into the one you came from.
 
-const LAST_KEY = 'meesho-sidebar-last';
 const COLLAPSE_KEY = 'meesho-sidebar-collapsed';
 const read = <T,>(key: string, fallback: T): T => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) as T : fallback; } catch { return fallback; } };
 const write = (key: string, value: unknown) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable: fine */ } };
 
-/** Which interface a path belongs to (customer screens are per signed-in account). */
-function sectionOf(path: string, account: AccountId): string | null {
-  if (path.startsWith('/customer')) return `customer:${account}`;
-  if (path.startsWith('/transit')) return 'transit';
-  const hub = path.match(/^\/hub\/([^/?]+)/); if (hub) return `hub:${hub[1]}`;
-  const rider = path.match(/^\/rider\/([^/?]+)/); if (rider) return `rider:${rider[1]}`;
-  return null;
-}
-
-/** Forget the remembered screens (Reset demo starts every interface fresh). */
-export function clearSidebarMemory() { write(LAST_KEY, {}); }
 
 export function Sidebar() {
   const loc = useLocation();
@@ -38,16 +28,15 @@ export function Sidebar() {
   const [confirmReset, setConfirmReset] = useState(false);
   const here = sectionOf(loc.pathname, account);
 
-  // remember the last screen of each interface
+  // record every screen change in its interface's own history (only when the screen changes, so switching the
+  // customer account doesn't file the old account's screen under the new one)
+  const navType = useNavigationType();
   useEffect(() => {
-    if (!here) return;
-    write(LAST_KEY, { ...read<Record<string, string>>(LAST_KEY, {}), [here]: loc.pathname + loc.search });
-  }, [here, loc.pathname, loc.search]);
+    const section = sectionOf(loc.pathname, useStore.getState().account);
+    if (section) recordVisit(section, loc.pathname + loc.search, navType === 'REPLACE');
+  }, [loc.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const go = (section: string, fallback: string) => {
-    const last = read<Record<string, string>>(LAST_KEY, {})[section];
-    nav(last ?? fallback);
-  };
+  const go = (section: string, fallback: string) => nav(lastVisit(section) ?? fallback);
   const openCustomer = (id: AccountId) => {
     if (id !== account) setAccount(id);
     go(`customer:${id}`, '/customer');
@@ -123,7 +112,7 @@ export function Sidebar() {
             <div className="flex gap-1.5">
               <button className="flex-1 rounded-md bg-white py-1 font-medium" onClick={() => setConfirmReset(false)}>Cancel</button>
               <button className="flex-1 rounded-md bg-danger py-1 font-semibold text-white" onClick={() => {
-                resetDemo(); clearSidebarMemory(); setConfirmReset(false); nav('/customer');
+                resetDemo(); clearInterfaceHistory(); setConfirmReset(false); nav('/customer');
               }}>Reset</button>
             </div>
           </div>
