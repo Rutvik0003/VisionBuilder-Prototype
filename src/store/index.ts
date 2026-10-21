@@ -119,6 +119,12 @@ export const useStore = create<Store>()(
   ),
 );
 
+// Several tabs or windows: when another tab saves, reload that state here, so this tab shows the latest data and
+// never writes over it with an older copy.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => { if (e.key === 'meesho-dice-demo') void useStore.persist.rehydrate(); });
+}
+
 // ---- selectors ----
 
 /** The signed-in demo account (always Existing or New — never a background shopper). */

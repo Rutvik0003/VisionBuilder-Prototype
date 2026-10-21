@@ -58,8 +58,7 @@ export const STRINGS = {
 
   // C1-F2 home check
   hcTitle: { en: 'Your parcel has reached your local delivery hub and will arrive {when}. Will you be home?', hi: 'आपका पार्सल आपके नज़दीकी डिलीवरी हब पहुँच गया है और {when} को आएगा। क्या आप घर पर होंगे?' },
-  hcMessage: { en: 'Your Meesho parcel has reached your local delivery hub and will arrive {when}. Will you be home?', hi: 'आपका मीशो पार्सल नज़दीकी डिलीवरी हब पहुँच गया है और {when} को आएगा। क्या आप घर पर होंगे?' },
-  hcAlsoParcel: { en: '+ one more parcel (order #{id}) on the same day.', hi: '+ उसी दिन एक और पार्सल (ऑर्डर #{id})।' },
+  hcMessage: { en: 'Your Meesho order of {items} has reached your local delivery hub and will arrive {when}. Will you be home?', hi: 'आपका मीशो ऑर्डर ({items}) नज़दीकी डिलीवरी हब पहुँच गया है और {when} को आएगा। क्या आप घर पर होंगे?' },
   hcCash: { en: 'Amount {amount}. Keep cash ready, or pay now by UPI and skip the wait.', hi: 'राशि {amount}। नकद तैयार रखें, या अभी UPI से भुगतान करें।' },
   hcYes: { en: 'Yes, I’ll be there', hi: 'हाँ, मैं रहूँगा/रहूँगी' },
   hcChange: { en: 'Change day/time', hi: 'दिन/समय बदलें' },
@@ -76,7 +75,8 @@ export const STRINGS = {
   paidNow: { en: 'Paid {amount} by UPI. Nothing to pay at delivery.', hi: 'UPI से {amount} का भुगतान हुआ। डिलीवरी पर कुछ नहीं देना।' },
 
   // C1-F5 delay
-  delayMessage: { en: 'Your order may arrive late, on {newDate} instead of {oldDate}. Sorry about this.', hi: 'आपका ऑर्डर देर से, {oldDate} की जगह {newDate} को आ सकता है। इसके लिए माफ़ी।' },
+  delayMessage: { en: 'Your order of {items} may arrive late, on {newDate} instead of {oldDate}. Sorry about this.', hi: 'आपका ऑर्डर ({items}) देर से, {oldDate} की जगह {newDate} को आ सकता है। इसके लिए माफ़ी।' },
+  refundLine: { en: '{amount} will be refunded to your UPI in 2–3 days.', hi: '{amount} 2–3 दिन में आपके UPI में वापस आ जाएगा।' },
   delayTitle: { en: 'Your order may arrive late', hi: 'आपका ऑर्डर देर से आ सकता है' },
   delayOk: { en: 'Okay, {day} is fine', hi: 'ठीक है, {day} चलेगा' },
   delayPick: { en: 'Pick another time', hi: 'दूसरा समय चुनें' },
@@ -89,7 +89,7 @@ export const STRINGS = {
 
   // C1-F3 tracking / C1-F4 masked contact / C2-F4 attempts
   ofdPush: { en: 'Your Meesho order is out for delivery today.', hi: 'आपका मीशो ऑर्डर आज डिलीवरी के लिए निकल गया है।' },
-  arrivingMsg: { en: '{rider} is 10 min away with your Meesho order.', hi: '{rider} आपके मीशो ऑर्डर के साथ 10 मिनट दूर हैं।' },
+  arrivingMsg: { en: '{rider} is 10 min away with your Meesho order of {items}.', hi: '{rider} आपके मीशो ऑर्डर ({items}) के साथ 10 मिनट दूर हैं।' },
   trackTitle: { en: 'Out for delivery. Arriving between {a} and {b}.', hi: 'डिलीवरी के लिए निकला। {a} से {b} के बीच पहुँचेगा।' },
   trackSoon: { en: 'About 10 minutes away', hi: 'लगभग 10 मिनट दूर' },
   trackNext: { en: 'The rider is heading to you now', hi: 'राइडर अभी आपकी ओर आ रहा है' },
@@ -148,6 +148,8 @@ export const STRINGS = {
   choiceDone: { en: 'Keeping {kept}. Cancelled {cancelled}. Nothing to pay for cancelled items.', hi: '{kept} रख रहे हैं। {cancelled} रद्द। रद्द आइटम के लिए कुछ नहीं देना है।' },
   ivrScriptConfirmMulti: { en: 'Namaste {name}! This is Meesho. You ordered {n} items for {amount} in total, Cash on Delivery, arriving {when}: {list}. Press 1 to confirm all. Press 2 to cancel all. Press 3 to choose item by item.', hi: 'नमस्ते {name}! मीशो से बात हो रही है। आपने {n} आइटम कुल {amount} में ऑर्डर किए हैं, कैश ऑन डिलीवरी, {when} को पहुँचेंगे: {list}। सब पक्का करने के लिए 1 दबाएँ। सब रद्द करने के लिए 2 दबाएँ। एक-एक करके चुनने के लिए 3 दबाएँ।' },
   ivrItemPrompt: { en: 'Item {i} of {n}: {item} for {amount}. Press 1 to keep it. Press 2 to cancel it.', hi: 'आइटम {i} / {n}: {item}, {amount}। रखने के लिए 1 दबाएँ। रद्द करने के लिए 2 दबाएँ।' },
+  ivrItemPromptQty: { en: 'Item {i} of {n}: {item}, {qty} pieces for {amount}. Press 1 to keep all {qty}. Press 2 to cancel all {qty}. Press 3 to keep only some.', hi: 'आइटम {i} / {n}: {item}, {qty} पीस, {amount}। सभी {qty} रखने के लिए 1 दबाएँ। सभी {qty} रद्द करने के लिए 2 दबाएँ। कुछ ही रखने के लिए 3 दबाएँ।' },
+  ivrQtyPrompt: { en: 'How many of the {qty} do you want to keep? Press a number from 1 to {max}.', hi: '{qty} में से कितने रखना चाहते हैं? 1 से {max} तक कोई नंबर दबाएँ।' },
   ivrAllConfirmed: { en: 'Thank you! All {n} items are confirmed.', hi: 'धन्यवाद! सभी {n} आइटम पक्के हो गए।' },
   ivrAllCancelled: { en: 'All {n} items have been cancelled. Nothing to pay.', hi: 'सभी {n} आइटम रद्द हो गए। कुछ नहीं देना है।' },
   confirmPlacedMulti: { en: 'Your items come from {n} sellers, so they ship as {n} parcels and arrive together on the same day. We’ll ask you to confirm them once on WhatsApp; if we can’t reach you, Meesho will call once in ~10 min.', hi: 'आपके आइटम {n} विक्रेताओं से हैं, इसलिए {n} पार्सल में आएँगे और एक ही दिन साथ पहुँचेंगे। हम WhatsApp पर एक बार पुष्टि माँगेंगे; संपर्क न होने पर मीशो ~10 मिनट में एक बार कॉल करेगा।' },

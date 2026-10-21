@@ -18,6 +18,7 @@ export function OrderPlaced() {
   const total = group.reduce((a, o) => a + o.total, 0);
   const multi = group.length > 1;
   const sameDay = new Set(group.map((o) => o.slot.date)).size === 1;
+  const visits = new Set(group.map((o) => `${o.slot.date}|${o.slot.window}`)).size; // parcels on the same day and time = one visit
 
   return (
     <Screen
@@ -40,8 +41,8 @@ export function OrderPlaced() {
         <div className="flex items-center gap-3">
           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-success"><Truck size={19} /></span>
           <div>
-            <div className="text-[12px] text-ink-muted">{order.hubId ? (multi ? (sameDay ? 'Your delivery slot (all parcels together)' : `${group.length} deliveries, as you chose`) : 'Your delivery slot') : 'Arriving by'}</div>
-            <div className="font-semibold">{sameDay ? <>{deliveryWhen(order)}{order.hubId && order.slot.window === 'Any time' ? ' · Any time' : ''}</> : group.map((o) => fmtDate(o.slot.date)).join(' and ')}</div>
+            <div className="text-[12px] text-ink-muted">{order.hubId ? (multi ? (sameDay ? 'Your delivery slot (all parcels together)' : `${visits} deliver${visits === 1 ? 'y' : 'ies'}, as you chose`) : 'Your delivery slot') : 'Arriving by'}</div>
+            <div className="font-semibold">{sameDay ? <>{deliveryWhen(order)}{order.hubId && order.slot.window === 'Any time' ? ' · Any time' : ''}</> : [...new Set(group.map((o) => fmtDate(o.slot.date)))].join(' and ')}</div>
             {order.deliverOnOrAfter && <div className="text-[12px] text-ink-muted">Cash ready from {fmtDate(order.deliverOnOrAfter)}</div>}
           </div>
         </div>
@@ -70,7 +71,7 @@ export function OrderPlaced() {
       </div>
       {order.confirm && (
         <div className="mx-3 mt-3 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-[13px] text-amber-900">
-          <MessageCircle size={16} className="mt-0.5 shrink-0" /> {multi ? (sameDay ? t('confirmPlacedMulti', { n: group.length }) : t('confirmPlacedSplit', { n: group.length, dates: group.map((o) => fmtDate(o.slot.date)).join(' and ') })) : t('confirmPlaced')}
+          <MessageCircle size={16} className="mt-0.5 shrink-0" /> {multi ? (sameDay ? t('confirmPlacedMulti', { n: group.length }) : t('confirmPlacedSplit', { n: group.length, dates: [...new Set(group.map((o) => fmtDate(o.slot.date)))].join(' and ') })) : t('confirmPlaced')}
         </div>
       )}
       {!order.confirm && multi && (

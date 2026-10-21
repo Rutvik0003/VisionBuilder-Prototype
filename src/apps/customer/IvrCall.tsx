@@ -11,7 +11,7 @@ import {
   applyConfirmChoices, arrivalText, cancelUnconfirmed, canCancelUnshipped, confirmCallMissed, confirmGroup, confirmLines, confirmOrder, endCall,
 } from '../../services/ivr';
 
-type Phase = 'ringing' | 'menu' | 'items' | 'ended';
+type Phase = 'ringing' | 'menu' | 'items' | 'qty' | 'ended';
 const RING_TIMEOUT_MS = 30_000;
 
 /**
@@ -48,12 +48,19 @@ function CallScreen({ orderId, kind, onClosed }: { orderId: string; kind: 'confi
   // Snapshot the checkout when the call starts, so the item list doesn't shift while we cancel items.
   const [group] = useState(() => (kind === 'confirm' ? confirmGroup(orderId) : []));
   const items = confirmLines(group);
-  const multi = items.length > 1;
+  const pieces = items.reduce((a, l) => a + l.qty, 0);
+  const multi = pieces > 1; // several items, or 2+ of one item
   const groupIds = group.map((o) => o.id);
   const [itemIdx, setItemIdx] = useState(0);
-  const [cancelKeys, setCancelKeys] = useState<string[]>([]);
+  const [cancel, setCancel] = useState<Record<string, number>>({}); // pieces to cancel per line
   const itemName = (i: number) => `${items[i].title}${items[i].size ? ` (${items[i].size})` : ''}`;
-  const itemPrompt = (i: number) => t('ivrItemPrompt', { i: i + 1, n: items.length, item: itemName(i), amount: rupees(items[i].amount) });
+  const itemPrompt = (i: number) => (items[i].qty > 1
+    ? t('ivrItemPromptQty', { i: i + 1, n: items.length, item: itemName(i), qty: items[i].qty, amount: rupees(items[i].amount) })
+    : t('ivrItemPrompt', { i: i + 1, n: items.length, item: itemName(i), amount: rupees(items[i].amount) }));
+  /** Keys shown on the call keypad for the current question. */
+  const keys = phase === 'qty' ? Array.from({ length: items[itemIdx].qty - 1 }, (_, k) => String(k + 1))
+    : phase === 'items' ? (items[itemIdx].qty > 1 ? ['1', '2', '3'] : ['1', '2'])
+      : kind === 'confirm' && multi ? ['1', '2', '3'] : ['1', '2'];
 
   const missed = () => {
     if (kind === 'confirm') confirmCallMissed(orderId);
@@ -69,7 +76,7 @@ function CallScreen({ orderId, kind, onClosed }: { orderId: string; kind: 'confi
   }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (phase !== 'menu' && phase !== 'items') return;
+    if (phase !== 'menu' && phase !== 'items' && phase !== 'qty') return;
     const id = setInterval(() => setSecs((x) => x + 1), 1000);
     return () => clearInterval(id);
   }, [phase]);
@@ -91,8 +98,8 @@ function CallScreen({ orderId, kind, onClosed }: { orderId: string; kind: 'confi
         ? t('ivrScriptVaani', { when: fmtDate(order.slot.date) })
         : multi
           ? t('ivrScriptConfirmMulti', {
-            name: customer.name.split(' ')[0], n: items.length, when: arrivalText(group),
-            amount: rupees(group.reduce((a, o) => a + o.total, 0)), list: items.map((_, i) => `${itemName(i)} for ${rupees(items[i].amount)}`).join(', '),
+            name: customer.name.split(' ')[0], n: pieces, when: arrivalText(group),
+            amount: rupees(group.reduce((a, o) => a + o.total, 0)), list: items.map((_, i) => `${itemName(i)}${items[i].qty > 1 ? ` × ${items[i].qty}` : ''} for ${rupees(items[i].amount)}`).join(', '),
           })
           : t('ivrScriptConfirm', { name: customer.name.split(' ')[0], item: product.title, amount: rupees(order.total), when: fmtDate(order.slot.date) }),
     }]);
@@ -100,20 +107,26 @@ function CallScreen({ orderId, kind, onClosed }: { orderId: string; kind: 'confi
 
   const press = (key: string) => {
     say(`You pressed ${key}`, 'you');
-    if (kind === 'confirm' && phase === 'items') {
-      // item by item: 1 keep · 2 cancel
-      const next = key === '2' ? [...cancelKeys, items[itemIdx].key] : cancelKeys;
-      setCancelKeys(next);
-      if (itemIdx + 1 < items.length) { setItemIdx(itemIdx + 1); say(itemPrompt(itemIdx + 1)); return; }
+    if (kind === 'confirm' && (phase === 'items' || phase === 'qty')) {
+      const line = items[itemIdx];
+      // item by item: 1 keep (all) · 2 cancel (all) · 3 keep only some → how many to keep
+      if (phase === 'items' && key === '3' && line.qty > 1) { setPhase('qty'); say(t('ivrQtyPrompt', { qty: line.qty, max: line.qty - 1 })); return; }
+      const cancelHere = phase === 'qty' ? line.qty - Number(key) : key === '2' ? line.qty : 0;
+      const next = { ...cancel, [line.key]: cancelHere };
+      setCancel(next);
+      if (itemIdx + 1 < items.length) { setItemIdx(itemIdx + 1); setPhase('items'); say(itemPrompt(itemIdx + 1)); return; }
       const { kept, cancelled } = applyConfirmChoices(orderId, next, 'call');
-      finish(!kept.length ? t('ivrAllCancelled', { n: cancelled.length }) : !cancelled.length ? t('ivrAllConfirmed', { n: kept.length })
-        : t('choiceDone', { kept: kept.map((l) => l.title).join(', '), cancelled: cancelled.map((l) => l.title).join(', ') }));
+      const name = (l: (typeof kept)[number]) => `${l.title}${l.qty > 1 ? ` × ${l.qty}` : ''}`;
+      const keptN = kept.reduce((a, l) => a + l.qty, 0);
+      const cancelledN = cancelled.reduce((a, l) => a + l.qty, 0);
+      finish(!keptN ? t('ivrAllCancelled', { n: cancelledN }) : !cancelledN ? t('ivrAllConfirmed', { n: keptN })
+        : t('choiceDone', { kept: kept.map(name).join(', '), cancelled: cancelled.map(name).join(', ') }));
     } else if (kind === 'confirm') {
-      if (key === '1') { confirmOrder(groupIds, 'call'); finish(multi ? t('ivrAllConfirmed', { n: items.length }) : t('ivrConfirmed')); }
+      if (key === '1') { confirmOrder(groupIds, 'call'); finish(multi ? t('ivrAllConfirmed', { n: pieces }) : t('ivrConfirmed')); }
       else if (key === '2') {
         if (!canCancelUnshipped(orderId)) { say('This order has already shipped, so it can’t be cancelled on this call.'); return; }
-        cancelUnconfirmed(groupIds, 'call'); finish(multi ? t('ivrAllCancelled', { n: items.length }) : t('ivrCancelled'));
-      } else if (key === '3' && multi) { setPhase('items'); setItemIdx(0); setCancelKeys([]); say(itemPrompt(0)); }
+        cancelUnconfirmed(groupIds, 'call'); finish(multi ? t('ivrAllCancelled', { n: pieces }) : t('ivrCancelled'));
+      } else if (key === '3' && multi) { setPhase('items'); setItemIdx(0); setCancel({}); say(itemPrompt(0)); }
     } else {
       // Vaani: "yes" covers every parcel for this door that day
       if (key === '1') { homeYes([orderId, ...dropSiblings(order, ['ACCEPTED', 'PLANNED', 'OUT_FOR_DELIVERY', 'ARRIVING_SOON']).map((o) => o.id)]); log('C1-F2', 'vaani_pressed_1', 'customer', {}, orderId); finish(t('hcConfirmed', { when: fmtDate(order.slot.date) })); }
@@ -147,9 +160,9 @@ function CallScreen({ orderId, kind, onClosed }: { orderId: string; kind: 'confi
               <div key={i} className={`w-fit max-w-[85%] rounded-xl px-3 py-2 text-[13px] leading-snug ${l.who === 'ivr' ? 'bg-white shadow-sm ring-1 ring-gray-200' : 'ml-auto bg-brand text-white'}`}>{l.text}</div>
             ))}
           </div>
-          {(phase === 'menu' || phase === 'items') && (
-            <div className={`grid gap-4 pt-3 ${phase === 'menu' && kind === 'confirm' && multi ? 'grid-cols-3 px-10' : 'grid-cols-2 px-16'}`}>
-              {(phase === 'menu' && kind === 'confirm' && multi ? ['1', '2', '3'] : ['1', '2']).map((k) => (
+          {(phase === 'menu' || phase === 'items' || phase === 'qty') && (
+            <div className={`grid gap-4 pt-3 ${keys.length >= 3 ? 'grid-cols-3 px-10' : 'grid-cols-2 px-16'}`}>
+              {keys.map((k) => (
                 <button key={k} onClick={() => press(k)} className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white text-xl font-semibold text-ink shadow-sm ring-1 ring-gray-200 hover:bg-brand-light">{k}</button>
               ))}
             </div>

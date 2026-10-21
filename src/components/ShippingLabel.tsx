@@ -18,11 +18,13 @@ export function ShippingLabel({ order, onClose }: { order: Order; onClose: () =>
   const products = useStore((s) => s.products);
   const product = products.find((p) => p.id === order.items[0].productId)!;
   const point = deliveryPoint(address);
-  const digipin = encodeDigipin(point.lat, point.lng);
+  // Only pinned (L2) or delivery-verified (L3) addresses have a real DIGIPIN; otherwise the rider uses the address text.
+  const hasPin = !!address.pin || !!address.learned;
+  const digipin = hasPin ? encodeDigipin(point.lat, point.lng) : '';
   const [qr, setQr] = useState('');
 
   useEffect(() => {
-    QRCode.toDataURL(`MEESHO|${order.id}|${digipin}|${point.lat.toFixed(6)},${point.lng.toFixed(6)}`, { margin: 1, width: 180 })
+    QRCode.toDataURL(hasPin ? `MEESHO|${order.id}|${digipin}|${point.lat.toFixed(6)},${point.lng.toFixed(6)}` : `MEESHO|${order.id}|NO-PIN|${address.pincode}`, { margin: 1, width: 180 })
       .then(setQr).catch(() => setQr(''));
   }, [order.id, digipin]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -49,10 +51,17 @@ export function ShippingLabel({ order, onClose }: { order: Order; onClose: () =>
             </div>
             {qr ? <img src={qr} alt="QR code with DIGIPIN" className="h-24 w-24 shrink-0" /> : <div className="h-24 w-24 shrink-0 bg-gray-100" />}
           </div>
-          <div className="rounded bg-gray-900 px-2 py-1.5 text-center text-white">
-            <div className="text-[9px] uppercase tracking-widest text-white/60">DIGIPIN</div>
-            <div className="text-lg font-bold tracking-widest">{digipin}</div>
-          </div>
+          {hasPin ? (
+            <div className="rounded bg-gray-900 px-2 py-1.5 text-center text-white">
+              <div className="text-[9px] uppercase tracking-widest text-white/60">DIGIPIN</div>
+              <div className="text-lg font-bold tracking-widest">{digipin}</div>
+            </div>
+          ) : (
+            <div className="rounded border border-dashed border-gray-400 px-2 py-1.5 text-center text-gray-600">
+              <div className="text-[9px] uppercase tracking-widest">DIGIPIN</div>
+              <div className="text-[12px] font-bold">NOT SET · use the address above</div>
+            </div>
+          )}
           <div className="mt-2 flex justify-between border-t border-dashed border-gray-400 pt-2">
             <span>#{order.id}</span>
             <span>{hub ? `${hub.name} · ${fmtDate(order.slot.date)}` : fmtDate(order.slot.date)}</span>

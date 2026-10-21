@@ -323,3 +323,23 @@ _This section supersedes the earlier "IVR order confirmation" notes._
 
 ## Open-box: Abort for safety removed (team request, 2026-10-21)
 - **Abort for safety is gone:** the open-box check no longer has an "Abort for safety" button. At the door the rider either completes the check (accept, refuse, or return some items) or uses the normal attempt buttons on the stop screen.
+
+## Edge cases fixed (2026-10-21)
+- **Prepaid open-box parcels (paid with "Pay now"):** a refusal at the door records a refund to UPI and tells the customer: "₹X will be refunded to your UPI in 2–3 days." The hub's Returns tab shows "Refund ₹X to UPI".
+  - For a partial return, the refund is the returned part of what was paid; the UPI discount stays with the kept items.
+  - The rider sees "prepaid, nothing to collect" / "refund ₹X" instead of a cash amount.
+- **Returning part of a quantity:** with 2+ of one item, the rider sets how many come back (− / +), e.g. return 1 of 2 curtains and keep 1.
+- **"Keep some, cancel some"** says "each arriving on its own day" when the parcels come on different days.
+- **Two tabs or windows stay in sync:** when one tab saves, the others reload that state, so a second tab shows the latest data and never writes over it.
+- **Order confirmation by quantity:** "Keep some, cancel some" also appears when a single item is ordered 2 or more times.
+  - **WhatsApp sheet:** an item with 2+ pieces has **− / +** to set how many to keep ("keep 1 of 2"); single items keep the Cancel / Keep button.
+  - **The call:** an item with 2+ pieces asks "Press 1 to keep all, 2 to cancel all, 3 to keep only some". Pressing 3 asks "How many of the 3 do you want to keep? Press a number from 1 to 2".
+  - **Result:** the order keeps only the chosen quantity, and the total is recalculated.
+
+## Clearer counts, messages and labels (2026-10-21)
+- **"N deliveries" counts visits, not parcels:** parcels on the same day and time window are one delivery. For example, 3 parcels where 2 come Sat morning and 1 Sun morning = "2 deliveries".
+- **Messages name the items they are about:**
+  - **Delay:** "Your order of Cotton Double Bedsheet + 2 Pillow Covers may arrive late…"
+  - **Will you be home?:** "Your Meesho order of Floral Rayon Kurti (M) + Anarkali Printed Kurta Set (M) has reached…". When a second parcel for the same day joins the message, it is rebuilt with every item and the combined cash amount.
+  - **10 min away:** "Suresh is 10 min away with your Meesho order of …"
+- **Shipping label:** the DIGIPIN shows only when the address really has one (pinned, or verified by deliveries). Otherwise the label says "DIGIPIN · NOT SET · use the address above", and the QR code carries no location.

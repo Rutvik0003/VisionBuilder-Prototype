@@ -27,13 +27,20 @@ export function OpenBoxFlow({ order, onDone, onBack }: { order: Order; onDone: (
   const [result, setResult] = useState<{ sealId: string; redirectEligible: boolean } | null>(null);
   const [otp, setOtp] = useState('');
   const [sealId, setSealId] = useState('');
-  const multi = order.items.length > 1;
-  const [returning, setReturning] = useState<Set<number>>(() => new Set(order.items.map((_, k) => k))); // default: all items back
-  const partial = multi && returning.size > 0 && returning.size < order.items.length;
+  // Several items, or 2+ of one item: the customer can keep some and return the rest (by line and by quantity)
+  const multi = order.items.length > 1 || order.items.some((it) => it.qty > 1);
+  const [returning, setReturning] = useState<Record<number, number>>(() => Object.fromEntries(order.items.map((it, k) => [k, it.qty]))); // default: all back
+  const totalQty = order.items.reduce((a, it) => a + it.qty, 0);
+  const returnQty = Object.values(returning).reduce((a, q) => a + q, 0);
+  const partial = multi && returnQty > 0 && returnQty < totalQty;
   const products = useStore((s) => s.products);
-  const keptDue = order.items.filter((_, k) => !returning.has(k)).reduce((a, it) => a + it.price * it.qty, 0)
+  const keptValue = order.items.reduce((a, it, k) => a + it.price * (it.qty - (returning[k] ?? 0)), 0);
+  const discount = Math.max(0, order.items.reduce((a, it) => a + it.price * it.qty, 0) - order.total); // UPI discount, if prepaid
+  const prepaid = order.payment === 'UPI';
+  const refundDue = prepaid ? order.total - Math.max(0, keptValue - discount) : 0;
+  const keptDue = (prepaid ? 0 : keptValue)
     + sameStop(order).filter((x) => !x.openBox).reduce((a, x) => a + (x.payment === 'COD' ? x.total : 0), 0);
-  const toggleReturn = (k: number) => setReturning((r) => { const n = new Set(r); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const setReturnQty = (k: number, q: number) => setReturning((r) => ({ ...r, [k]: Math.max(0, Math.min(order.items[k].qty, q)) }));
   const otpOk = otp === order.deliveryOtp;
   // other parcels for this door that are handed over at the same time (one stop)
   const collectDue = [order, ...sameStop(order).filter((x) => !x.openBox)].reduce((a, x) => a + (x.payment === 'COD' ? x.total : 0), 0);
@@ -118,7 +125,7 @@ export function OpenBoxFlow({ order, onDone, onBack }: { order: Order; onDone: (
               if (!acceptAfterInspection(order.id, undefined, true)) { showToast(`Tick all ${CHECKLIST.length} checks to confirm delivery`); return; }
               showToast('Delivered after open-box check · ₹13.5 earned'); onDone();
             }}>
-            <CircleCheck size={16} /> Customer accepts · collect {rupees(collectDue)}
+            <CircleCheck size={16} /> Customer accepts · {collectDue > 0 ? `collect ${rupees(collectDue)}` : 'prepaid, nothing to collect'}
           </button>
           {!allChecked && (
             <div className="-mt-1 text-center text-[11px] text-ink-muted">
@@ -136,15 +143,29 @@ export function OpenBoxFlow({ order, onDone, onBack }: { order: Order; onDone: (
               <div className="text-xs font-semibold">Which items is the customer returning?</div>
               {order.items.map((it, k) => {
                 const p = products.find((x) => x.id === it.productId);
+                const q = returning[k] ?? 0;
                 return (
-                  <label key={k} className="flex cursor-pointer items-center gap-2 rounded-md bg-white px-2 py-1.5 text-sm">
-                    <input type="checkbox" className="h-4 w-4 accent-danger" checked={returning.has(k)} onChange={() => toggleReturn(k)} />
-                    <span className="min-w-0 flex-1 truncate">{p?.title}{it.size ? ` (${it.size})` : ''}</span>
-                    <span className="text-xs text-ink-muted">{rupees(it.price * it.qty)}</span>
-                  </label>
+                  <div key={k} className="rounded-md bg-white px-2 py-1.5 text-sm">
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input type="checkbox" className="h-4 w-4 accent-danger" checked={q > 0} onChange={() => setReturnQty(k, q > 0 ? 0 : it.qty)} />
+                      <span className="min-w-0 flex-1 truncate">{p?.title}{it.size ? ` (${it.size})` : ''}{it.qty > 1 ? ` × ${it.qty}` : ''}</span>
+                      <span className="text-xs text-ink-muted">{rupees(it.price * it.qty)}</span>
+                    </label>
+                    {it.qty > 1 && q > 0 && (
+                      <div className="mt-1 flex items-center gap-2 pl-6 text-xs">
+                        Returning
+                        <button className="h-6 w-6 rounded-full border border-gray-300" aria-label={`Return fewer ${p?.title}`} onClick={() => setReturnQty(k, q - 1)}>−</button>
+                        <b>{q}</b>
+                        <button className="h-6 w-6 rounded-full border border-gray-300 disabled:opacity-40" disabled={q >= it.qty} aria-label={`Return more ${p?.title}`} onClick={() => setReturnQty(k, q + 1)}>+</button>
+                        of {it.qty} · keeps {it.qty - q}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
-              <div className="text-[11px] text-ink-muted">{partial ? 'The rest is delivered now: the customer pays only for what they keep.' : 'Untick the items the customer keeps.'}</div>
+              <div className="text-[11px] text-ink-muted">
+                {partial ? (prepaid ? `The rest is delivered now. ${rupees(refundDue)} goes back to the customer's UPI.` : 'The rest is delivered now: the customer pays only for what they keep.') : 'Untick (or reduce) what the customer keeps.'}
+              </div>
             </div>
           )}
           <div className="text-xs font-semibold">Why is the customer {partial ? 'returning them' : 'refusing'}?</div>
@@ -172,14 +193,14 @@ export function OpenBoxFlow({ order, onDone, onBack }: { order: Order; onDone: (
           {partial ? (
             <button className="btn w-full bg-danger !py-3 text-white" disabled={!reason || !itemPhoto || sealId.length < 4 || !otpOk}
               onClick={() => {
-                refuseSomeItems(order.id, [...returning], reason!, damaged, sealId, true);
-                showToast(`${returning.size} item${returning.size > 1 ? 's' : ''} resealed for the seller · rest delivered`);
+                refuseSomeItems(order.id, Object.entries(returning).map(([k, q]) => ({ index: Number(k), qty: q })), reason!, damaged, sealId, true);
+                showToast(`${returnQty} item${returnQty > 1 ? 's' : ''} resealed for the seller · rest delivered`);
                 onDone();
               }}>
-              <ShieldAlert size={16} /> Reseal returned items · deliver the rest · collect {rupees(keptDue)}
+              <ShieldAlert size={16} /> Reseal returned items · deliver the rest · {prepaid ? `refund ${rupees(refundDue)}` : `collect ${rupees(keptDue)}`}
             </button>
           ) : (
-            <button className="btn w-full bg-danger !py-3 text-white" disabled={!reason || !itemPhoto || sealId.length < 4 || returning.size === 0}
+            <button className="btn w-full bg-danger !py-3 text-white" disabled={!reason || !itemPhoto || sealId.length < 4 || returnQty === 0}
               onClick={() => setResult(refuseAfterInspection(order.id, reason!, damaged, sealId))}>
               <ShieldAlert size={16} /> Reseal in tamper-evident bag
             </button>

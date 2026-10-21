@@ -443,7 +443,7 @@ export function Checkout() {
             </section>
             <section className="bg-white px-4 py-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-sm font-semibold"><CalendarDays size={15} className="text-brand" /> {mode === 'separate' ? `${parts.length} deliveries` : pilot ? slotLine : `Arriving by ${fmtDate(promised)}`}</div>
+                <div className="flex items-center gap-1.5 text-sm font-semibold"><CalendarDays size={15} className="text-brand" /> {mode === 'separate' ? (() => { const n = new Set(parts.map((p) => `${partSlot(p).date}|${partSlot(p).window}`)).size; return `${n} deliver${n === 1 ? 'y' : 'ies'}`; })() : pilot ? slotLine : `Arriving by ${fmtDate(promised)}`}</div>
                 {pilot && <button className="text-xs font-semibold text-brand" onClick={() => go('delivery')}>Change</button>}
               </div>
               {mode === 'separate' && (

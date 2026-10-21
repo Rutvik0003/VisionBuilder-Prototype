@@ -206,7 +206,8 @@ export function ReturnedCard({ order, onReplace, partOf }: { order: Order; onRep
         <div className="flex-1">
           <div className="text-sm font-semibold">{partOf ? t('returnedPartTitle') : refused ? t('refusedTitle') : t('rtoTitle')}</div>
           <div className="text-[12px] text-ink-muted">
-            {partOf ? `Returned: ${itemsLabel(order, products)} (${r?.reason ?? ''}) · #${order.id}. Nothing to pay for it.` : refused ? t('refusedSub', { reason: r?.reason ?? '' }) : t('rtoSub')}
+            {partOf ? `Returned: ${itemsLabel(order, products)} (${r?.reason ?? ''}) · #${order.id}. ${r?.refund ? '' : 'Nothing to pay for it.'}` : refused ? t('refusedSub', { reason: r?.reason ?? '' }) : t('rtoSub')}
+            {r?.refund && <span className="mt-1 block font-semibold text-success">{t('refundLine', { amount: rupees(r.refund.amount) })}</span>}
           </div>
         </div>
         <FeatureTag id={refused ? 'C2-F3' : 'C2-F4'} />

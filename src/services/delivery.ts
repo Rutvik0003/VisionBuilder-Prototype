@@ -9,6 +9,7 @@ import { distanceM } from './geo';
 import { setOrderStatus, updateOrder } from './orders';
 import { moveBooking } from './slots';
 import { deliveryPoint, laneStats, nnOrder } from './routing';
+import { itemsLabel } from './catalog';
 
 export const EARNING_PER_DROP = 13.5;
 const MIN_PER_STOP = 9;
@@ -126,7 +127,7 @@ export function refreshArriving(riderId: string) {
     setOrderStatus(o.id, 'ARRIVING_SOON', 'About 10 minutes away', { arrivingNotified: true });
     if (told) { get().log('C1-F3', 'arriving_alert_merged', 'system', {}, o.id); return; } // same door: already told
     get().sendMessage({
-      customerId: o.customerId, orderId: o.id, channel: 'whatsapp', featureId: 'C1-F3', text: t('arrivingMsg', get().lang, { rider: rider.name }),
+      customerId: o.customerId, orderId: o.id, channel: 'whatsapp', featureId: 'C1-F3', text: t('arrivingMsg', get().lang, { rider: rider.name, items: [o, ...sameStop(o)].map((x) => itemsLabel(x, get().products)).join(' + ') }),
       buttons: [
         { label: t('callRider', get().lang), action: `call_rider:${o.id}` },
         { label: t('notHome', get().lang), action: `not_home:${o.id}` },

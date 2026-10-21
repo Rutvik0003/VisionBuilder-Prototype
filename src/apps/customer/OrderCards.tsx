@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { itemsLabel } from '../../services/catalog';
 import dayjs from 'dayjs';
 import { Bike, CalendarClock, CheckCircle2, Clock3, Hourglass, MapPinned, PackageOpen, Store, Warehouse } from 'lucide-react';
 import { useStore } from '../../store';
@@ -187,7 +188,7 @@ export function DelayCard({ order, onPick, onCancel }: { order: Order; onPick: (
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white"><Hourglass size={17} /></span>
         <div className="flex-1">
           <div className="text-[14px] font-semibold">{t('delayTitle')}</div>
-          <div className="text-[13px] text-ink-muted">{t('delayMessage', { newDate: fmtDate(newDate), oldDate: fmtDate(oldDate) })}</div>
+          <div className="text-[13px] text-ink-muted">{t('delayMessage', { items: itemsLabel(order, useStore.getState().products), newDate: fmtDate(newDate), oldDate: fmtDate(oldDate) })}</div>
         </div>
         <FeatureTag id="C1-F5" />
       </div>

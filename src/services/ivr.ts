@@ -28,11 +28,11 @@ const idList = (orders: Order[]) => orders.map((o) => '#' + o.id).join(', ');
 const productOf = (productId: string) => get().products.find((p) => p.id === productId)!;
 
 /** One line per item across the group, used by WhatsApp, the call and the choose sheet. */
-export interface ConfirmLine { key: string; orderId: string; index: number; productId: string; title: string; size?: string; qty: number; amount: number; seller: string }
+export interface ConfirmLine { key: string; orderId: string; index: number; productId: string; title: string; size?: string; qty: number; price: number; amount: number; seller: string }
 export function confirmLines(orders: Order[]): ConfirmLine[] {
   return orders.flatMap((o) => o.items.map((it, index) => {
     const p = productOf(it.productId);
-    return { key: `${o.id}:${index}`, orderId: o.id, index, productId: it.productId, title: p.title, size: it.size, qty: it.qty, amount: it.price * it.qty, seller: p.sellerName };
+    return { key: `${o.id}:${index}`, orderId: o.id, index, productId: it.productId, title: p.title, size: it.size, qty: it.qty, price: it.price, amount: it.price * it.qty, seller: p.sellerName };
   }));
 }
 /** "Thu, 22 Oct" or, when the parcels come on different days, "Thu, 22 Oct and Fri, 23 Oct". */
@@ -98,13 +98,14 @@ function sendConfirmWhatsApp(orders: Order[]) {
   const lines = confirmLines(orders);
   const key = ids(orders).join(',');
   const total = orders.reduce((sum, o) => sum + o.total, 0);
-  const text = lines.length === 1
+  const pieces = lines.reduce((a, l) => a + l.qty, 0);
+  const text = pieces === 1
     ? t('confirmMsg', s.lang, { item: lines[0].title, amount: rupees(total), when: fmtDate(lead.slot.date) })
     : t('confirmMsgMulti', s.lang, {
-      n: lines.length, amount: rupees(total), when: arrivalText(orders),
+      n: pieces, amount: rupees(total), when: arrivalText(orders),
       list: lines.map((l) => `• ${lineName(l)} · ${rupees(l.amount)} · ${l.seller}${lineDate(orders, l)}`).join('\n'),
     });
-  const buttons = lines.length === 1
+  const buttons = pieces === 1
     ? [{ label: t('ivrConfirmBtn', s.lang), action: `ivr_confirm:${key}` }, { label: t('ivrCancelBtn', s.lang), action: `ivr_cancel:${key}` }]
     : [
       { label: t('confirmAllBtn', s.lang), action: `ivr_confirm:${key}` },
@@ -169,22 +170,24 @@ export function cancelUnconfirmed(orderId: string | string[], via: 'whatsapp' | 
  * Keep some items, cancel the rest (WhatsApp "Keep some, cancel some" or keypad 3 on the call).
  * An order whose items are all cancelled is cancelled; an order keeping some items is trimmed and confirmed.
  */
-export function applyConfirmChoices(orderId: string, cancelKeys: string[], via: 'whatsapp' | 'call') {
+export function applyConfirmChoices(orderId: string, cancelChoice: string[] | Record<string, number>, via: 'whatsapp' | 'call') {
   const group = confirmGroup(orderId);
   if (!group.length) return { kept: [] as ConfirmLine[], cancelled: [] as ConfirmLine[] };
   const lines = confirmLines(group);
-  const cancel = new Set(cancelKeys);
-  const kept = lines.filter((l) => !cancel.has(l.key));
-  const cancelled = lines.filter((l) => cancel.has(l.key));
+  // how many pieces of each line to cancel (a plain list of keys = cancel those lines completely)
+  const cancelQty = (l: ConfirmLine) => Math.min(l.qty, Array.isArray(cancelChoice) ? (cancelChoice.includes(l.key) ? l.qty : 0) : cancelChoice[l.key] ?? 0);
+  const part = (l: ConfirmLine, qty: number): ConfirmLine => ({ ...l, qty, amount: l.price * qty });
+  const kept = lines.filter((l) => l.qty - cancelQty(l) > 0).map((l) => part(l, l.qty - cancelQty(l)));
+  const cancelled = lines.filter((l) => cancelQty(l) > 0).map((l) => part(l, cancelQty(l)));
   const lang = get().lang;
   if (!kept.length) { cancelUnconfirmed(orderId, via); return { kept, cancelled }; }
   for (const o of group) {
-    const keepItems = o.items.filter((_, i) => !cancel.has(`${o.id}:${i}`));
+    const keepItems = o.items.map((it, i) => ({ ...it, qty: it.qty - cancelQty(lines.find((l) => l.key === `${o.id}:${i}`)!) })).filter((it) => it.qty > 0);
     if (!keepItems.length) { cancelOne(o, via); continue; }
-    const removed = o.items.length - keepItems.length;
+    const removed = o.items.reduce((a, it) => a + it.qty, 0) - keepItems.reduce((a, it) => a + it.qty, 0);
     const newTotal = keepItems.reduce((sum, it) => sum + it.price * it.qty, 0) - (o.payment === 'UPI' && o.id === group[0].id ? UPI_DISCOUNT : 0);
     updateOrder(o.id, { items: keepItems, total: newTotal, confirm: { ...o.confirm!, state: 'confirmed' } });
-    if (removed) get().log('P1', 'items_cancelled_before_dispatch', 'customer', { via, removed }, o.id);
+    if (removed) get().log('P1', 'items_cancelled_before_dispatch', 'customer', { via, removedPieces: removed }, o.id);
     get().log('P1', 'order_confirmed', 'customer', { via, partial: removed > 0 }, o.id);
   }
   answerConfirm(ids(group), t('choiceDone', lang, { kept: kept.map(lineName).join(', '), cancelled: cancelled.map(lineName).join(', ') }));

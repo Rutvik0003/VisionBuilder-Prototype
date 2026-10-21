@@ -15,10 +15,16 @@ export function ConfirmItemsSheet({ orderId, onClose }: { orderId: string; onClo
   const t = useT();
   const group = confirmGroup(orderId);
   const lines = confirmLines(group);
-  const [cancel, setCancel] = useState<Set<string>>(new Set());
-  const toggle = (key: string) => setCancel((c) => { const n = new Set(c); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  const keptTotal = lines.filter((l) => !cancel.has(l.key)).reduce((a, l) => a + l.amount, 0);
+  // pieces to cancel per line: one piece = Cancel / Keep, 2+ pieces = − / + how many to keep
+  const [cancel, setCancel] = useState<Record<string, number>>({});
+  const cq = (key: string) => cancel[key] ?? 0;
+  const setKeep = (key: string, qty: number, keep: number) => setCancel((c) => ({ ...c, [key]: qty - Math.max(0, Math.min(qty, keep)) }));
+  const pieces = lines.reduce((a, l) => a + l.qty, 0);
+  const cancelledPieces = lines.reduce((a, l) => a + cq(l.key), 0);
+  const keptPieces = pieces - cancelledPieces;
+  const keptTotal = lines.reduce((a, l) => a + l.price * (l.qty - cq(l.key)), 0);
   const sellers = new Set(lines.map((l) => l.seller)).size;
+  const sameDay = new Set(group.map((o) => o.slot.date)).size <= 1;
 
   return (
     <Sheet open onClose={onClose} title={t('chooseItemsBtn')}>
@@ -27,37 +33,51 @@ export function ConfirmItemsSheet({ orderId, onClose }: { orderId: string; onClo
       ) : (
         <div className="space-y-3 p-4">
           <p className="text-[13px] text-ink-muted">
-            Tap <b>Cancel</b> on anything you don’t want. The rest ships{sellers > 1 ? ` (${sellers} parcels from ${sellers} sellers, arriving together)` : ''}.
+            Tap <b>Cancel</b> on anything you don’t want{lines.some((l) => l.qty > 1) ? <>, or use <b>− / +</b> to keep fewer</> : null}. The rest ships{sellers > 1 ? ` (${sellers} parcels from ${sellers} sellers, ${sameDay ? 'arriving together' : 'each arriving on its own day'})` : ''}.
           </p>
           <div className="divide-y divide-gray-100 rounded-xl border border-gray-200">
             {lines.map((l) => {
               const product = products.find((p) => p.id === l.productId);
-              const off = cancel.has(l.key);
+              const keep = l.qty - cq(l.key);
+              const off = keep === 0;
               return (
                 <div key={l.key} className={`flex items-center gap-3 p-2.5 ${off ? 'bg-red-50/50' : ''}`}>
                   {product && <ProductImage product={product} className={`h-12 w-10 rounded-md ${off ? 'opacity-40' : ''}`} emojiSize="text-xl" />}
                   <div className={`min-w-0 flex-1 text-[13px] ${off ? 'text-ink-muted line-through' : ''}`}>
                     <div className="truncate font-medium">{l.title}{l.size ? ` · ${l.size}` : ''}{l.qty > 1 ? ` × ${l.qty}` : ''}</div>
-                    <div className="text-[11px] text-ink-muted">{l.seller} · {rupees(l.amount)}</div>
+                    <div className="text-[11px] text-ink-muted">{l.seller} · {rupees(l.price)}{l.qty > 1 ? ' each' : ''}</div>
                   </div>
-                  <button onClick={() => toggle(l.key)} aria-pressed={!off}
-                    className={`chip !px-3 !py-1.5 text-[12px] font-semibold ${off ? 'border border-gray-300 bg-white text-ink' : 'border border-danger/40 bg-white text-danger'}`}>
-                    {off ? <><Check size={13} /> Keep</> : <><X size={13} /> Cancel</>}
-                  </button>
+                  {l.qty > 1 ? (
+                    <div className="flex shrink-0 flex-col items-center gap-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <button className="h-7 w-7 rounded-full border border-gray-300 bg-white text-base leading-none disabled:opacity-40" disabled={keep === 0}
+                          aria-label={`Keep fewer ${l.title}`} onClick={() => setKeep(l.key, l.qty, keep - 1)}>−</button>
+                        <b className="w-4 text-center text-sm">{keep}</b>
+                        <button className="h-7 w-7 rounded-full border border-gray-300 bg-white text-base leading-none disabled:opacity-40" disabled={keep === l.qty}
+                          aria-label={`Keep more ${l.title}`} onClick={() => setKeep(l.key, l.qty, keep + 1)}>+</button>
+                      </div>
+                      <span className="text-[10px] text-ink-muted">keep {keep} of {l.qty}</span>
+                    </div>
+                  ) : (
+                    <button onClick={() => setKeep(l.key, 1, off ? 1 : 0)} aria-pressed={!off}
+                      className={`chip !px-3 !py-1.5 text-[12px] font-semibold ${off ? 'border border-gray-300 bg-white text-ink' : 'border border-danger/40 bg-white text-danger'}`}>
+                      {off ? <><Check size={13} /> Keep</> : <><X size={13} /> Cancel</>}
+                    </button>
+                  )}
                 </div>
               );
             })}
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-ink-muted">Keeping {lines.length - cancel.size} of {lines.length} · pay on delivery</span>
+            <span className="text-ink-muted">Keeping {keptPieces} of {pieces} · pay on delivery</span>
             <b>{rupees(keptTotal)}</b>
           </div>
           <button className="btn-primary w-full !py-3" onClick={() => {
-            const { kept, cancelled } = applyConfirmChoices(orderId, [...cancel], 'whatsapp');
-            showToast(!kept.length ? t('ivrAllCancelled', { n: cancelled.length }) : !cancelled.length ? t('ivrAllConfirmed', { n: kept.length }) : `Keeping ${kept.length}, cancelled ${cancelled.length}`);
+            applyConfirmChoices(orderId, cancel, 'whatsapp');
+            showToast(!keptPieces ? t('ivrAllCancelled', { n: pieces }) : !cancelledPieces ? t('ivrAllConfirmed', { n: pieces }) : `Keeping ${keptPieces}, cancelled ${cancelledPieces}`);
             onClose();
           }}>
-            {cancel.size === 0 ? t('confirmAllBtn') : cancel.size === lines.length ? t('cancelAllBtn') : `Confirm ${lines.length - cancel.size}, cancel ${cancel.size}`}
+            {cancelledPieces === 0 ? t('confirmAllBtn') : keptPieces === 0 ? t('cancelAllBtn') : `Confirm ${keptPieces}, cancel ${cancelledPieces}`}
           </button>
         </div>
       )}

@@ -196,6 +196,7 @@ export interface Refusal {
   customerChoice?: 'replacement' | 'closed'; // what the customer chose after refusing
   redirect?: Redirect; // R1 Redirect Loop
   replacementOrderId?: string;
+  refund?: { amount: number; at: string }; // prepaid (Pay now) parcel returned at the door → back to the UPI it came from
 }
 
 /** R1 Redirect Loop: a refused, resealed parcel resold to a nearby shopper instead of travelling back to the seller. */

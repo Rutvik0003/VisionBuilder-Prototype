@@ -72,6 +72,7 @@ export function RefusalsView({ hubId, onOpen }: { hubId: string; onOpen: (id: st
                   <span className="chip bg-gray-100 font-mono font-semibold">Tamper bag {r.sealId}</span>
                   {r.customerChoice === 'replacement' && <span className="chip bg-sky-50 text-sky-700">Customer ordered a replacement · #{r.replacementOrderId}</span>}
                   {r.customerChoice === 'closed' && <span className="chip bg-gray-100 text-ink-muted">Customer closed the order</span>}
+                  {r.refund && <span className="chip bg-emerald-50 text-success">Refund {rupees(r.refund.amount)} to UPI</span>}
                   <span className="chip bg-ink text-white"><Undo2 size={12} /> Returning to seller</span>
                 </div>
               );

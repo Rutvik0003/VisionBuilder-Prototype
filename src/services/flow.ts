@@ -1,11 +1,12 @@
 // Action-driven order lifecycle (PRD v3 §7). Nothing happens without a button press;
 // "system" effects run instantly inside the press that caused them.
 import { useStore } from '../store';
-import type { Order, OrderStatus, SlotLabel } from '../types';
+import type { Order, OrderStatus, SlotLabel, Lang } from '../types';
 import dayjs from 'dayjs';
 import { fmtDate, rupees } from '../lib/format';
 import { t } from '../lib/strings';
 import { rescore, setOrderStatus, updateOrder, UPI_DISCOUNT, dropSiblings } from './orders';
+import { itemsLabel } from './catalog';
 import { moveBooking } from './slots';
 
 const get = () => useStore.getState();
@@ -85,7 +86,7 @@ export function reportTransitDelay(orderId: string, days = 1, cause: 'missed_dis
     delay: { oldDate, newDate, source: 'transit', cause, prevStatus: o.status },
   });
   const lang = s.lang;
-  const text = t('delayMessage', lang, { newDate: fmtDate(newDate), oldDate: fmtDate(oldDate) });
+  const text = t('delayMessage', lang, { items: itemsLabel(o, s.products), newDate: fmtDate(newDate), oldDate: fmtDate(oldDate) });
   s.sendMessage({
     customerId: o.customerId, orderId, channel: 'whatsapp', featureId: 'C1-F5', text,
     buttons: [
@@ -153,6 +154,15 @@ export function hubAccept(orderIds: string[]) {
 
 const HOME_CHECK_ACTIONS = ['check_yes', 'check_change', 'check_directions', 'pay_now'] as const;
 
+/** "Your Meesho order of {items} … will arrive {when}. Will you be home?" + cash to keep ready, for one or more parcels. */
+function homeCheckText(orders: Order[], lang: Lang) {
+  const products = get().products;
+  const cod = orders.filter((x) => x.payment === 'COD').reduce((a, x) => a + x.total, 0);
+  let text = t('hcMessage', lang, { items: orders.map((x) => itemsLabel(x, products)).join(' + '), when: deliveryWhen(orders[0]) });
+  if (cod > 0) text += '\n' + t('hcCash', lang, { amount: rupees(cod) });
+  return text;
+}
+
 /** One message per customer per delivery date: a second parcel for the same day joins the first message. */
 function sendHomeCheck(orderId: string, thirdParty = false) {
   const s = get();
@@ -162,10 +172,12 @@ function sendHomeCheck(orderId: string, thirdParty = false) {
     && parseAction(m.buttons[0].action).orderIds.some((id) => findOrder(id).slot.date === o.slot.date));
 
   if (existing) {
+    // the second parcel joins the first message: rebuilt so it names every item and the total to pay
+    const all = [...parseAction(existing.buttons[0].action).orderIds.map(findOrder), o];
     s.patch((st) => ({
       messages: st.messages.map((m) => (m.id !== existing.id ? m : {
         ...m,
-        text: m.text + '\n' + t('hcAlsoParcel', st.lang, { id: o.id }),
+        text: homeCheckText(all, st.lang),
         buttons: m.buttons.map((b) => ({ ...b, action: `${b.action},${o.id}` })),
       })),
     }));
@@ -174,8 +186,7 @@ function sendHomeCheck(orderId: string, thirdParty = false) {
   }
 
   const lang = s.lang;
-  let text = t('hcMessage', lang, { when: deliveryWhen(o) });
-  if (o.payment === 'COD') text += '\n' + t('hcCash', lang, { amount: rupees(o.total) });
+  const text = homeCheckText([o], lang);
   const buttons = HOME_CHECK_ACTIONS
     // X1: a 3PL parcel only gets the ping (the other actions need a Valmo hub)
     .filter((a) => (!thirdParty || a === 'check_yes') && (a !== 'pay_now' || o.payment === 'COD'))

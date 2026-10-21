@@ -5,6 +5,7 @@ import { useStore } from '../store';
 import type { Inspection, Order } from '../types';
 import { nowIso } from '../lib/time';
 import { t } from '../lib/strings';
+import { rupees } from '../lib/format';
 import { placeOrder, setOrderStatus, updateOrder } from './orders';
 import { markDelivered, refreshArriving } from './delivery';
 import { afterOrderPlaced } from './ivr';
@@ -73,7 +74,7 @@ export function refuseAfterInspection(orderId: string, reason: string, damaged: 
   setOrderStatus(orderId, 'REFUSED_AFTER_INSPECTION', `Refused after inspection · ${reason}`, {
     sealId,
     inspection: { ...inspectionOf(o), outcome: 'refused' },
-    refusal: { at, reason, damaged, itemPhotoAt: at, sealId, redirectEligible, disposition: 'return_to_seller' },
+    refusal: { at, reason, damaged, itemPhotoAt: at, sealId, redirectEligible, disposition: 'return_to_seller', ...(o.payment === 'UPI' ? { refund: { amount: o.total, at } } : {}) },
     visit: { arrived: true, callsMade: 0, doorMessageSent: false, ...o.visit, outcome: 'refused' },
     attempts: [...o.attempts, {
       at, riderId: o.route?.riderId ?? '', arrived: true, callsMade: o.visit?.callsMade ?? 0,
@@ -82,15 +83,17 @@ export function refuseAfterInspection(orderId: string, reason: string, damaged: 
   });
   s.sendMessage({
     customerId: o.customerId, orderId, channel: 'whatsapp', featureId: 'C2-F3',
-    text: keptFrom
+    text: (keptFrom
       ? t('refusedPartPush', s.lang, { reason, kept: itemsLabel(keptFrom, s.products), returned: itemsLabel(o, s.products) })
-      : t('refusedPush', s.lang, { reason }),
+      : t('refusedPush', s.lang, { reason }))
+      + (o.payment === 'UPI' ? ' ' + t('refundLine', s.lang, { amount: rupees(o.total) }) : ''),
     buttons: [
       { label: t(reason === 'Changed mind' ? 'orderAgain' : 'getCorrectItem', s.lang), action: `replace:${orderId}` },
       { label: t('closeOrder', s.lang), action: `close_refused:${orderId}` },
     ],
   });
   s.log('C2-F3', 'inspection_refused', 'customer', { reason, damaged, seconds: secondsUsed(o) }, orderId);
+  if (o.payment === 'UPI') s.log('C2-F3', 'refund_initiated', 'system', { amount: o.total, to: 'UPI' }, orderId);
   s.log('C2-F3', 'reseal_done', 'rider', { sealId, redirectEligible }, orderId);
   s.log('C2-F3', 'returning_to_seller', 'system', { reason: 'Opened at the door: sealed in a tamper bag, not resold' }, orderId);
   if (o.route) refreshArriving(o.route.riderId);
@@ -102,26 +105,31 @@ export function refuseAfterInspection(orderId: string, reason: string, damaged: 
  * The returned items move to their own order (same seller, same door) that is refused and resealed in a tamper bag
  * → back to the seller, with Order again / Close for the customer. The kept items are delivered and paid for.
  */
-export function refuseSomeItems(orderId: string, returnIdx: number[], reason: string, damaged: boolean, enteredSealId: string, otpVerified: boolean) {
+export function refuseSomeItems(orderId: string, returns: { index: number; qty: number }[], reason: string, damaged: boolean, enteredSealId: string, otpVerified: boolean) {
   const s = get();
   const o = findOrder(orderId);
-  const back = new Set(returnIdx);
+  // how many of each line come back (a line of 2 can return 1 and keep 1)
+  const back = new Map(returns.filter((r) => r.qty > 0).map((r) => [r.index, Math.min(r.qty, o.items[r.index]?.qty ?? 0)]));
   if (back.size === 0) return null;
-  if (back.size >= o.items.length) return { ...refuseAfterInspection(orderId, reason, damaged, enteredSealId), childId: orderId };
-  const keep = o.items.filter((_, i) => !back.has(i));
-  const returned = o.items.filter((_, i) => back.has(i));
+  const keep = o.items.map((it, i) => ({ ...it, qty: it.qty - (back.get(i) ?? 0) })).filter((it) => it.qty > 0);
+  const returned = o.items.map((it, i) => ({ ...it, qty: back.get(i) ?? 0 })).filter((it) => it.qty > 0);
+  if (!keep.length) return { ...refuseAfterInspection(orderId, reason, damaged, enteredSealId), childId: orderId };
   const sum = (items: Order['items']) => items.reduce((a, it) => a + it.price * it.qty, 0);
+  // What was paid is split: the kept part keeps any UPI discount, the returned part is what comes back (refund if prepaid)
+  const discount = Math.max(0, sum(o.items) - o.total);
+  const keptTotal = Math.max(0, sum(keep) - discount);
+  const backTotal = o.total - keptTotal;
   const at = nowIso();
   const childId = orderIdGen();
   const child: Order = {
-    ...o, id: childId, items: returned, total: sum(returned), returnedFrom: o.id, groupId: undefined, attempts: [],
+    ...o, id: childId, items: returned, total: backTotal, returnedFrom: o.id, groupId: undefined, attempts: [],
     timeline: [{ at, status: o.status, note: `Returned at the door from order #${o.id}` }],
   };
   s.patch((st) => ({ orders: [child, ...st.orders] }));
   s.log('C2-F3', 'items_returned_at_door', 'customer', { returned: returned.length, kept: keep.length, reason }, orderId);
   const result = refuseAfterInspection(childId, reason, damaged, enteredSealId, { ...o, items: keep });
   // the rest of the parcel is accepted: the customer pays only for what they keep
-  updateOrder(orderId, { items: keep, total: sum(keep), returnedPart: childId, sealId: undefined });
+  updateOrder(orderId, { items: keep, total: keptTotal, returnedPart: childId, sealId: undefined });
   patchInspection(orderId, { outcome: 'accepted' });
   s.log('C2-F3', 'inspection_accepted', 'customer', { seconds: secondsUsed(o), partial: true, kept: keep.length }, orderId);
   markDelivered(orderId, undefined, otpVerified);
